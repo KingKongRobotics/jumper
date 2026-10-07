@@ -16,6 +16,30 @@ This link currently opens the pre-merge `codex/colab-training-and-video` branch 
 the `tianrking/jumper` fork. After the change is merged upstream, the entry can move
 to `KingKongRobotics/jumper` on `main`; until then, use the branch link above.
 
+## Choose the settings
+
+The first form selects the task and training length; its main run defaults to
+256 environments and 500 iterations. A separate five-iteration smoke check runs
+before it. The same form controls the later simulation and downloads:
+
+| Setting | How to use it |
+|---|---|
+| `TASK`, `NUM_ENVS`, `ITERATIONS` | Select the motion, parallel environment count and additional training iterations. |
+| `SIM_SECONDS`, `SIM_FPS` | Simulated duration and recording frame rate; both must be positive and finite. |
+| `SIM_WIDTH`, `SIM_HEIGHT` | Image dimensions, each an even integer of at least two. |
+| `SIM_SCENE` | Keep `task default` to replay the task's world; another scene changes the test conditions, such as terrain or friction. |
+| `SIM_CAMERA_DISTANCE` | Zero uses automatic framing; a positive value sets the camera distance in metres. |
+| `RECORD_JOINTS` | Save and display simulation joint telemetry alongside the video. |
+| `DOWNLOAD_FILES` | Enable automatic browser downloads; disabling it keeps inline previews and files available for manual download. |
+| `CHECKOUT_FOLDER` | One simple folder name under `/content`; the default is `jumper`, and paths follow the chosen name. |
+| `CORE_VERSION_OVERRIDES` | For resume, paste the saved manifest's `config.runtime_versions` JSON. |
+
+Version overrides accept only exact versions of `torch`, `mujoco`, `mujoco-warp`,
+`warp-lang`, `numpy` and `tensordict`. URLs, ranges and arbitrary pip arguments are
+not accepted. The supported Torch/torchvision pair is 2.9.1/0.24.1; a different
+pair requires its own validation. Also restore the manifest's source commit using
+`SOURCE_REVISION`. A matching package list still needs a compatible GPU driver.
+
 ## Watch the demonstration first
 
 Run the notebook cells in order through the demonstration. They clone the repository
@@ -29,8 +53,8 @@ compilation, simulation and video encoding are separate operations; a slow first
 does not tell you how fast the later training loop will be. Read the cell output if
 a check fails, and fix that condition before running dependent cells.
 
-The Python environment is local to this checkout. Notebook shell commands use
-`/content/jumper/.venv/bin/python`, so the notebook kernel's preinstalled packages do
+The Python environment is local to this checkout. With the default checkout folder,
+notebook shell commands use `/content/jumper/.venv/bin/python`, so the kernel's preinstalled packages do
 not silently replace the vendored training packages. Jumper requires Python
 3.10 through 3.13 (`>=3.10,<3.14`). The setup should stop on an unsupported Python
 version, an unavailable CUDA device or a GPU driver/backend mismatch; it should not
@@ -74,6 +98,12 @@ Runs are written to `logs/<model>/<task>/<timestamp>/`. Replay and export should
 the checkpoint selected by the notebook from that run, rather than an unrelated
 newest checkpoint. See [Usage](USAGE.md) for the full training controls.
 
+After the main run, the training-curve cell reads the TensorBoard events from that
+exact run. It exports the complete recorded scalar history to `metrics.json` and
+`metrics.csv`, and displays `training-curves.png` with up to six selected curves.
+The PNG is a summary; the JSON and CSV retain all recorded scalar tags and samples.
+Check reward, episode length and losses before interpreting the policy's progress.
+
 ## Record a replay
 
 The notebook uses the same video option as local replay. From the repository root:
@@ -108,6 +138,18 @@ failed recording, inspect the rendering or encoder error before trying a larger
 image or a longer run. An MP4 that plays and an effective trained policy are
 different results.
 
+The trained-policy replay uses the selected checkpoint and computes its control
+step count from `SIM_SECONDS` and the task's actual control rate. Its physics rate
+matches the task, observation noise stays enabled, and the result is shown inline.
+Colab does not open the desktop keyboard/gamepad viewer.
+
+With `RECORD_JOINTS` enabled, replay adds the existing `--measure` option. It records
+one sample per control step to `measure.csv`: simulated time in seconds, absolute
+joint position in radians, velocity in radians/second and applied actuator torque
+in N·m, with joint and actuator names. Contact-enabled tasks may also record foot
+force in newtons. The notebook displays `measure.png` and keeps both files with
+the run's attachments. These are simulation measurements, not hardware telemetry.
+
 ## Keep the checkpoint before the runtime ends
 
 Treat the Colab machine's local files as temporary. Download what you need before
@@ -126,6 +168,14 @@ The notebook's saved run metadata and snapshot manifest provide context for the
 checkpoint. A policy file alone cannot establish which robot geometry and
 observation layout it expects. Enable the optional checkpoint backup before a long
 run if you want these snapshots; a lost runtime cannot copy files afterwards.
+
+The final portable backup ZIP includes the selected run's complete saved checkpoints,
+configuration and logs, plus a separate artifact directory for that run. Available
+attachments include the runtime and EGL reports, full scalar JSON/CSV and curve PNG,
+simulation settings, and joint CSV/PNG. A successful MP4 or ONNX export is included
+only when it belongs to the selected checkpoint; rerunning cells must not pull in
+an old checkpoint's video or export. If plotting, recording or export fails, use
+the backup cell to preserve the complete checkpoints and attachments already saved.
 
 To continue in a later runtime, run setup and the GPU checks again, restore the
 saved run to local storage, and check the recorded task, source revision and
@@ -150,6 +200,11 @@ new run. See [Usage](USAGE.md) and [agent setup](AGENT_SETUP.md) for diagnostics
 The export cell writes an ONNX actor and its `layout.json` contract, README and
 checkpoint copy. Keep that directory together: the contract carries observation
 and action ordering, scales, gains and other information a consumer needs.
+The notebook selects the checkpoint explicitly and writes a new folder for each
+export, so repeating the cell does not overwrite the preceding export. Its
+`--no-video` option avoids recording the task's full motion a second time. When
+`DOWNLOAD_FILES` is enabled, download cells offer the videos, joint CSV and final
+backup ZIP; otherwise download the printed paths manually before the runtime ends.
 
 ```bash
 .venv/bin/python scripts/export.py --task jumper.tripod \
@@ -168,6 +223,12 @@ The core workflow has been exercised in a real Google Colab session on an NVIDIA
 Tesla T4, with Python 3.13, PyTorch 2.9.1+cu126, MuJoCo 3.11 and Warp 1.18.
 These results cover the tested branch's core code, rather than guaranteeing every
 future Colab image or GPU allocation:
+
+The results below come from the earlier 20-iteration plus five-iteration restore
+acceptance run. The added replay settings, joint telemetry, full scalar exports
+and per-run artifact packaging have not yet completed the new 500-iteration T4
+acceptance run. Do not interpret the earlier results as verification of every
+new notebook option.
 
 | Check | Observed result |
 |---|---|

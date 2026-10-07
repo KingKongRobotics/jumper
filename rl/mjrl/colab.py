@@ -403,7 +403,7 @@ def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dic
         from matplotlib import pyplot as plt
 
         preferred = ("Train/mean_reward", "Train/mean_episode_length",
-                     "Loss/value_function", "Loss/surrogate", "Policy/mean_std",
+                     "Loss/value", "Loss/surrogate", "Policy/mean_std",
                      "Perf/total_fps")
         selected = [tag for tag in preferred if tag in tags]
         selected += [tag for tag in tags if tag not in selected][:6 - len(selected)]

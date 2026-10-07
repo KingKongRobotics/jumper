@@ -407,10 +407,12 @@ def test_notebook_simulation_uses_control_time_and_records_the_selected_checkpoi
     namespace = {
         "SESSION": session, "ARTIFACTS": artifacts, "REPO": tmp_path,
         "PYTHON": tmp_path / ".venv/python", "TASK": "robot.walk", "MODEL": "robot",
-        "CHECKPOINT_PATH": model, "RUN_DIR": run_dir, "training": {"operation": "selected"},
+        "CHECKPOINT_PATH": model, "RUN_DIR": run_dir,
+        "training": {"operation": "selected", "config": {"task": "robot.walk", "model": "robot"}},
         "SIM_SECONDS": 1.01, "SIM_FPS": 12.0, "SIM_WIDTH": 800, "SIM_HEIGHT": 600,
         "SIM_SCENE": scene, "SIM_CAMERA_DISTANCE": distance, "RECORD_JOINTS": measure,
         "run": run, "json": json, "math": __import__("math"), "shutil": __import__("shutil"),
+        "uuid": __import__("uuid"),
         "display": lambda value: None, "Video": lambda *args, **kwargs: None,
         "Image": lambda **kwargs: None,
     }
@@ -434,6 +436,32 @@ def test_notebook_simulation_uses_control_time_and_records_the_selected_checkpoi
     if measure:
         assert namespace["MEASUREMENT_CHECKPOINT"] == str(model)
         assert (artifacts / "measure.csv").is_file()
+        first_video = namespace["TRAIN_VIDEO"]
+        namespace.update(RECORD_JOINTS=False, SIM_SCENE="rubber")
+        exec(compile(notebook_cell("SIM_STEPS ="), "repeat_simulation", "exec"), namespace)  # noqa: S102
+        # A new unmeasured scene must not inherit the earlier ice scene's measurements.
+        assert namespace["TRAIN_VIDEO"] != first_video and first_video.is_file()
+        assert not (artifacts / "measure.csv").exists()
+        assert not (artifacts / "measure.png").exists()
+        assert not (model.parent / "measure").exists()
+        assert namespace["MEASUREMENT_CHECKPOINT"] == ""
+        previous = namespace["REPLAY_HISTORY"]
+        assert (previous / "checkpoint-measure/measure.csv").is_file()
+        assert (previous / "measure.csv").is_file()
+        assert json.loads((previous / "simulation-settings.json").read_text())["scene"] == "ice"
+        current = json.loads((artifacts / "simulation-settings.json").read_text())
+        assert current["scene"] == "rubber" and current["record_joints"] is False
+
+
+@pytest.mark.parametrize("changed", [{"TASK": "robot.other-gait"}, {"MODEL": "other-robot"}])
+def test_notebook_replay_rejects_task_or_model_changes_before_archiving_or_gpu(changed):
+    """Matching tensor dimensions cannot establish a checkpoint's gait or robot semantics."""
+    namespace = {"TASK": "robot.walk", "MODEL": "robot", "training": {
+        "config": {"task": "robot.walk", "model": "robot"},
+    }, **changed}
+    with pytest.raises(ValueError, match="Change only SIM_"):
+        # No Path, shutil or GPU runner is supplied: the task/model gate must come first.
+        exec(compile(notebook_cell("SIM_STEPS ="), "refuse_wrong_task", "exec"), namespace)  # noqa: S102
 
 
 @pytest.mark.parametrize("matching", [False, True])

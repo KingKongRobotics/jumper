@@ -93,9 +93,16 @@ def test_missing_events_or_empty_scalar_samples_fail_before_publishing(
     assert not output.parent.exists()
 
 
-def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch):
+@pytest.mark.parametrize("tags, expected", [
+    (["Episode/return"], ["Episode/return"]),
+    (["Curriculum/command", "Train/mean_reward", "Train/mean_episode_length", "Loss/value",
+      "Loss/surrogate", "Policy/mean_std", "Perf/total_fps"],
+     ["Train/mean_reward", "Train/mean_episode_length", "Loss/value", "Loss/surrogate",
+      "Policy/mean_std", "Perf/total_fps"]),
+])
+def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch, tags, expected):
     event_reader(monkeypatch, {
-        "Episode/return": [SimpleNamespace(step=4, wall_time=2, value=7.0)]
+        tag: [SimpleNamespace(step=4, wall_time=2, value=7.0)] for tag in tags
     })
     axes = []
 
@@ -144,7 +151,7 @@ def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch):
     assert axes[0].labels["xlabel"] == "Training iteration"
     assert axes[0].labels["ylabel"]
     assert closed == [figure]
-    assert result["plotted_tags"] == ["Episode/return"]
+    assert result["plotted_tags"] == expected
 
 
 def saved_run(tmp_path):
