@@ -36,11 +36,18 @@ joint targets driving the servos. No checkpoint, and the task is the app's
 default mode's unless `--task` names another. See `mjrl/app_play.py`.
 
     python scripts/play.py --app out/bundle_<timestamp>/<name>.app
+
+Record simulation-time MP4 without a display (Linux GPU runtimes need
+``MUJOCO_GL=egl`` set before starting Python):
+
+    python scripts/play.py --checkpoint <path>/model_N.pt --headless \
+        --steps 500 --video replay.mp4 --video-fps 30
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 from _cli import (
@@ -48,8 +55,8 @@ from _cli import (
     add_viewer_args,
     apply_scene,
     build_parser,
-    parse_with_task_args,
     maybe_viewer,
+    parse_with_task_args,
     print_task_table,
     resolve_all,
     resolve_checkpoint,
@@ -163,6 +170,18 @@ def main() -> None:
     add_viewer_args(parser, ui_default=True, fps_default=60.0)
     add_scene_args(parser)
 
+    v = parser.add_argument_group("video recording")
+    v.add_argument("--video", type=Path, default=None, metavar="MP4",
+                   help="record an MP4, including with --headless; requires finite --steps")
+    v.add_argument("--video-fps", type=float, default=30.0,
+                   help="encoded frames per simulation second (default: 30)")
+    v.add_argument("--video-width", type=int, default=640)
+    v.add_argument("--video-height", type=int, default=480)
+    v.add_argument("--video-env", type=int, default=0,
+                   help="environment index to record (default: 0)")
+    v.add_argument("--video-distance", type=float, default=None,
+                   help="optional tracking-camera distance in metres")
+
     r = parser.add_argument_group("replay")
     r.add_argument(
         "--checkpoint", default=None,
@@ -249,6 +268,7 @@ def main() -> None:
         # The selected task may take arguments of its own; see
         # `tasks.load_cli_args`. Nothing here knows which, or how many.
         args = parse_with_task_args(parser, opened.default_task if opened else None)
+        _validate_video_args(parser, args)
         if opened is not None and (
             args.checkpoint or args.agent != "trained"
         ):
@@ -270,6 +290,8 @@ def main() -> None:
             return
 
         spec, res, asset = resolve_all(args)
+        if args.video is not None and args.video_env >= res.num_envs:
+            parser.error("--video-env must be less than --num_envs")
 
         if args.dry_run:
             print(f"[mjrl] resolved: task={spec.id} -- --dry-run, stopping here")
@@ -282,12 +304,32 @@ def main() -> None:
             opened.close()
 
 
+def _validate_video_args(parser, args) -> None:
+    """Reject unbounded or invalid recordings before allocating a simulation."""
+    if args.video is None:
+        return
+    if args.steps is None or args.steps <= 0:
+        parser.error("--video requires a positive, finite --steps")
+    if args.video.suffix.lower() != ".mp4":
+        parser.error("--video must name an .mp4 file")
+    if not math.isfinite(args.video_fps) or args.video_fps <= 0:
+        parser.error("--video-fps must be finite and positive")
+    if any(n <= 0 or n % 2 for n in (args.video_width, args.video_height)):
+        parser.error("video dimensions must be positive even integers")
+    if args.video_env < 0:
+        parser.error("--video-env must be nonnegative")
+    if args.video_distance is not None and (
+        not math.isfinite(args.video_distance) or args.video_distance <= 0
+    ):
+        parser.error("--video-distance must be finite and positive")
+
+
 def _run(spec, res, asset: Path | None, args) -> None:
     """Build the environment and run the policy. Heavy imports happen here."""
     import torch
+    from mjrl.backend.select import use_backend
 
     import tasks
-    from mjrl.backend.select import use_backend
 
     # Order matters: the backend must be registered before the env is built.
     # See the note in scripts/train.py.
@@ -344,6 +386,7 @@ def _run(spec, res, asset: Path | None, args) -> None:
     # teardown that depends on how far construction got turns a clear message
     # into `UnboundLocalError: monitor`, printed *instead of* the reason.
     monitor = None
+    video = None
     policy = None
     try:
         wrapped = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
@@ -375,7 +418,7 @@ def _run(spec, res, asset: Path | None, args) -> None:
             shape = env.action_space.shape
             zero = args.agent == "zero"
 
-            def policy(obs):  # noqa: ARG001 - the dummy agents ignore observations
+            def policy(obs):
                 if zero:
                     return torch.zeros(shape, device=env.device)
                 return 2 * torch.rand(shape, device=env.device) - 1
@@ -394,6 +437,15 @@ def _run(spec, res, asset: Path | None, args) -> None:
                 print("[measure] this scene has no entity with joints; nothing to measure")
 
         with maybe_viewer(env, args) as viewer:
+            if args.video is not None:
+                from mjrl.viewer.video import ReplayVideo
+
+                video = ReplayVideo(
+                    env, args.video, fps=args.video_fps,
+                    width=args.video_width, height=args.video_height,
+                    env_index=args.video_env, camera_distance=args.video_distance,
+                )
+                video.__enter__()
             # Real time when someone is watching. `--headless` is the audit path
             # -- a scripted run measuring something, where pacing would only make
             # it take twenty times longer for no one's benefit -- so it is
@@ -406,18 +458,30 @@ def _run(spec, res, asset: Path | None, args) -> None:
             # beside the speed -- the random sampler's, which nothing drives the
             # robot with -- so only the speed, which is the robot's.
             status = None if args.app is not None else tasks.load_play_status(spec.id)
-            _loop(wrapped, policy, viewer, args.steps, speed, status or _speed_text, monitor)
+            _loop(wrapped, policy, viewer, args.steps, speed,
+                  status or _speed_text, monitor, video)
     finally:
         # Before `env.close()`: the monitor holds no simulation state, but it
         # prints where it wrote things, and a line printed after the environment
         # tears down lands under mjlab's own shutdown output.
-        if monitor is not None:
-            monitor.close()
-        if args.app is not None:
-            if policy is not None and hasattr(policy, "close"):
-                policy.close()
-            args.opened_app.close()
-        env.close()
+        # A failed encoder must still release the simulation and app resources.
+        try:
+            if video is not None:
+                video.close()
+                print(f"[mjrl] video {video.path.resolve()} "
+                      f"({video.frame_count} frames at {video.fps:g} fps)")
+        finally:
+            try:
+                if monitor is not None:
+                    monitor.close()
+            finally:
+                try:
+                    if args.app is not None:
+                        if policy is not None and hasattr(policy, "close"):
+                            policy.close()
+                        args.opened_app.close()
+                finally:
+                    env.close()
 
 
 def _watched(env):
@@ -465,7 +529,7 @@ def _speed_text(entity, index: int, env) -> str:
 
 
 def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
-          readout=_speed_text, monitor=None) -> None:
+          readout=_speed_text, monitor=None, video=None) -> None:
     """Step the environment under the policy until the window closes.
 
     The loop lives here rather than inside the viewer so that headless replay --
@@ -479,7 +543,6 @@ def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
     does not scroll.
     """
     import torch
-
     from mjrl.viewer.stats import Pacer, RunStats
 
     unwrapped = getattr(env, "unwrapped", env)
@@ -515,6 +578,8 @@ def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
         # redraw; see `mjrl/viewer/monitor.py` for why that matters to the pacer.
         if monitor is not None:
             monitor.update()
+        if video is not None:
+            video.update()
         step += 1
 
 

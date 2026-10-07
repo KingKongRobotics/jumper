@@ -1,4 +1,4 @@
-<!-- tracks: PROJECT_GUIDE.md @ sha256:f31ae2b351ea20cc -->
+<!-- tracks: PROJECT_GUIDE.md @ sha256:5b577e687264ed56 -->
 
 # Jumper 项目指南
 
@@ -49,6 +49,7 @@ PyTorch 或 vendored package 是否装错的方法。[教程](TUTORIAL.zh.md)会
 |---|---|
 | [环境搭建](USAGE.zh.md#环境搭建) | 从一份全新克隆走到测试全部通过。 |
 | [教程](TUTORIAL.zh.md) | 用一个完整示例走过训练、回放、导出和打包。 |
+| [Colab Notebook](COLAB.zh.md) | 使用云端 GPU 训练，保存检查点并观看无窗口 MP4 回放。 |
 | [手册](USAGE.zh.md) | 命令、任务、资产、场景、默认值、TensorBoard 和续训。 |
 | [控制方式](CONTROLS.zh.md) | 手柄、键盘，以及每种模式如何使用它们。 |
 

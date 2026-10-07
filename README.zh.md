@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:2f51540bc342a691 -->
+<!-- tracks: README.md @ sha256:6d77fbc83ef18036 -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -51,6 +51,7 @@
 |---|---|
 | [jumper-design](https://github.com/KingKongRobotics/jumper-design) | 外观与场景生成；AI 读取其[工作说明](https://github.com/KingKongRobotics/jumper-design/blob/main/AGENTS.md)，按需使用工具。 |
 | [训练教程](docs/TUTORIAL.zh.md) | 本仓库中的动作训练、回放与策略导出。 |
+| [Colab 训练](docs/COLAB.zh.md) | 在 Notebook 中使用 GPU 训练、备份与恢复检查点、导出 ONNX 并录制仿真 MP4。 |
 | [动作包格式](deploy/BUNDLE.md) | 将训练好的动作及控制器打包为 `.app`；环境要求见[构建指南](deploy/README.md)。 |
 | [项目指南](docs/PROJECT_GUIDE.zh.md) | 环境安装、当前能力和更多文档。 |
 

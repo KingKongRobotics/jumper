@@ -49,6 +49,7 @@ This repo is Jumper’s AI toolkit for appearance, motion, and scene creation. O
 |---|---|
 | [jumper-design](https://github.com/KingKongRobotics/jumper-design) | Appearance and scene creation; your assistant reads its [instructions](https://github.com/KingKongRobotics/jumper-design/blob/main/AGENTS.md) and uses its tools as needed. |
 | [Training tutorial](docs/TUTORIAL.md) | Motion training, replay and policy export in this repository. |
+| [Colab training](docs/COLAB.md) | GPU training in a notebook, checkpoint backup, resume, ONNX export and MP4 simulation replay. |
 | [Motion bundles](deploy/BUNDLE.md) | Package trained motions and their controller as an `.app`; see the [build guide](deploy/README.md) for prerequisites. |
 | [Project guide](docs/PROJECT_GUIDE.md) | Setup, current capabilities and further documentation. |
 
