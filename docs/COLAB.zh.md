@@ -1,11 +1,16 @@
-<!-- tracks: COLAB.md @ sha256:5ab5f17ca71e0bf5 -->
+<!-- tracks: COLAB.md @ sha256:70e4a1fa8feaf73d -->
 
 # 在 Google Colab 中运行 Jumper
 
 [首页](../README.zh.md) · [English](COLAB.md) · [Notebook](../notebooks/jumper_colab.ipynb)
+· [快速开始和本次训练视频](../notebooks/README.zh.md)
 
-这个 Notebook 可以让你观看已有舞蹈策略、尝试一次小规模训练，并保存视频和策略
-文件。你的电脑不需要安装 Jumper。视频展示的是仿真机器人，不代表实机表现。
+这个 Notebook 在 Colab GPU 上训练 Jumper，显示训练曲线，并用 MuJoCo 回放
+你的策略，生成视频和关节测量数据。可以不重新训练就调整回放参数，导出 ONNX，
+保存备份并在以后继续训练。500 次迭代训练及备份恢复流程已经在真实 Colab T4
+上运行。你的电脑只需要浏览器，不需要本地安装、WSL 或本地 GPU。
+[快速开始](../notebooks/README.zh.md)中包含本次训练的视频；视频展示的是仿真，
+不代表实体机器人表现。
 
 [在 Colab 中打开 Notebook](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)，
 如果想保留自己的修改，先保存一份副本，再选择 GPU 运行时。在运行演示或训练单元

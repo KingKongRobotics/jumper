@@ -1,10 +1,15 @@
 # Run Jumper in Google Colab
 
 [Home](../README.md) · [中文](COLAB.zh.md) · [Notebook](../notebooks/jumper_colab.ipynb)
+· [Quick start and training video](../notebooks/README.md)
 
-The notebook lets you watch a supplied dance policy, try a small training run, and save
-the resulting video and policy files. You do not need to install Jumper on your computer.
-The video shows the simulated robot; it does not demonstrate real-robot performance.
+The notebook trains Jumper on a Colab GPU, shows the training curves, and replays
+your policy in MuJoCo with video and joint measurements. You can change the replay
+settings without training again, export ONNX, and save a backup for later resume.
+The 500-iteration training and backup/restore workflow has run on a real Colab T4.
+Your computer only needs a browser; no local installation, WSL or local GPU is needed.
+The [quick start](../notebooks/README.md) includes the video from this training run.
+That video shows simulation, not physical-robot performance.
 
 Open [the notebook in Colab](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb),
 save a copy if you want to keep your changes, and select a GPU runtime. Run the setup
