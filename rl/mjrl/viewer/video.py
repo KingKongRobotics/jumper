@@ -45,6 +45,12 @@ class _ReplayRenderer(OffscreenRenderer):
             self._geom_map = np.asarray(ids)
         self._physics_model = physics
         super().__init__(model, cfg, scene, sim.model, sim.expanded_fields)
+        # A replay draws externally supplied poses; it never integrates this
+        # model or displays contact diagnostics. Skip duplicate CPU collision
+        # detection/solving, while keeping mj_forward's flex/tendon, camera,
+        # light and COM updates. OffscreenRenderer owns an independent model
+        # copy, so simulation contacts and its other disable bits are untouched.
+        self._model.opt.disableflags |= int(mujoco.mjtDisableBit.mjDSBL_CONTACT)
         if cfg.origin_type == ViewerConfig.OriginType.AUTO:
             # AUTO in the vendored offscreen renderer currently uses a free
             # camera. A scene with no entity metadata can still follow a body.

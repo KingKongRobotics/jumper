@@ -184,6 +184,9 @@ def _sim(stripped):
 @pytest.mark.parametrize("stripped", [False, True])
 def test_model_sync_selects_world_and_preserves_appearance(stripped):
     sim, scene = _sim(stripped)
+    original_flags = int(mujoco.mjtDisableBit.mjDSBL_GRAVITY)
+    sim.mj_model.opt.disableflags = original_flags
+    sim.render_model.opt.disableflags = original_flags
     cfg = ViewerConfig(env_idx=1, max_extra_envs=0)
     renderer = video._ReplayRenderer(sim, cfg, scene)
     renderer._sync_model_fields(1)
@@ -198,6 +201,53 @@ def test_model_sync_selects_world_and_preserves_appearance(stripped):
     renderer._sync_model_fields(0)
     assert model.body_mass[1] == 1
     assert model.geom_pos[-1, 0] == 0  # Control: selecting world zero differs.
+    contact_flag = int(mujoco.mjtDisableBit.mjDSBL_CONTACT)
+    assert model.opt.disableflags == original_flags | contact_flag
+    assert sim.mj_model.opt.disableflags == original_flags
+    assert sim.render_model.opt.disableflags == original_flags
+
+
+def test_disabling_render_contacts_keeps_kinematics_camera_light_com_and_tendon():
+    """A penetrating sphere is the control: contacts really exist in the physics
+    model. The recorder skips them but produces the same visible scene at the
+    selected world's supplied pose, including its tendon and tracking camera.
+    """
+    xml = """
+    <mujoco><worldbody>
+      <geom name="floor" type="plane" size="5 5 .1"/>
+      <body name="robot" pos="0 0 .05"><freejoint/>
+        <geom name="ball" type="sphere" size=".2"/>
+        <site name="a" pos="-.1 0 0"/><site name="b" pos=".1 0 0"/>
+        <camera name="camera" pos=".3 0 .4" mode="trackcom"/>
+        <light pos="0 0 1" mode="trackcom"/>
+      </body>
+    </worldbody><tendon><spatial name="tendon"><site site="a"/><site site="b"/>
+    </spatial></tendon></mujoco>
+    """
+    model = mujoco.MjModel.from_xml_string(xml)
+    reference = mujoco.MjData(model)
+    reference.qpos[0] = 2
+    reference.qpos[2] = .12
+    mujoco.mj_forward(model, reference)
+    assert reference.ncon > 0
+    sim = SimpleNamespace(mj_model=model, model=object(), expanded_fields=set())
+    scene = SimpleNamespace(entities={}, env_origins=_Tensor(np.zeros((2, 3))))
+    renderer = video._ReplayRenderer(sim, ViewerConfig(max_extra_envs=0), scene)
+    state = {
+        name: _Tensor(np.stack([getattr(mujoco.MjData(model), name), getattr(reference, name)]))
+        for name in ("qpos", "qvel", "ctrl", "act", "qfrc_applied", "xfrc_applied")
+    }
+    renderer._sync_data_fields(SimpleNamespace(**state), 1)
+    rendered = renderer._data
+    assert rendered.ncon == 0
+    assert model.opt.disableflags & int(mujoco.mjtDisableBit.mjDSBL_CONTACT) == 0
+    for field in ("geom_xpos", "geom_xmat", "site_xpos", "site_xmat", "cam_xpos",
+                  "cam_xmat", "light_xpos", "light_xdir", "subtree_com", "ten_length"):
+        np.testing.assert_allclose(getattr(rendered, field), getattr(reference, field),
+                                   atol=1e-12, err_msg=f"Render-only contacts changed {field}")
+    assert rendered.geom_xpos[1, 0] == 2  # The selected state is visibly distinct from world zero.
+    assert not renderer._opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT]
+    assert not renderer._opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE]
 
 
 def test_camera_tracks_actuated_entity_and_keeps_floor_geometry():
