@@ -401,3 +401,116 @@ def test_notebook_reemits_subprocess_logs_and_keeps_a_bounded_failure_tail(capsy
     assert failure.value.returncode == 7
     assert "line 69" in failure.value.output
     assert "line 0\n" not in failure.value.output
+
+
+@pytest.mark.parametrize("nvidia_available", [False, True])
+def test_notebook_egl_override_is_session_local_and_never_selects_mesa(
+    tmp_path, nvidia_available
+):
+    """A GPU driver can exist while GLVND's only registered vendor remains Mesa."""
+    notebook = json.loads((REPO / "notebooks/jumper_colab.ipynb").read_text(encoding="utf-8"))
+    source = next("".join(cell["source"]) for cell in notebook["cells"]
+                  if cell["cell_type"] == "code"
+                  and "def configure_nvidia_egl(" in "".join(cell["source"]))
+    function = source[source.index("def configure_nvidia_egl("):source.index("NVIDIA_EGL =")]
+    session = tmp_path / "session"
+    session.mkdir()
+    vendor_directory = tmp_path / "system/egl_vendor.d"
+    vendor_directory.mkdir(parents=True)
+    mesa_config = vendor_directory / "50_mesa.json"
+    mesa_config.write_text('{"ICD":{"library_path":"libEGL_mesa.so.0"}}')
+    mesa_library = tmp_path / "libEGL_mesa.so.0"
+    mesa_library.write_text("existing Mesa library")
+    nvidia_library = tmp_path / "driver/libEGL_nvidia.so.0"
+    if nvidia_available:
+        nvidia_library.parent.mkdir()
+        nvidia_library.write_text("existing NVIDIA library")
+    candidates = [tmp_path / "missing/libEGL_nvidia.so.0", nvidia_library, mesa_library]
+    environment = {"LD_LIBRARY_PATH": "/existing/path",
+                   "__EGL_VENDOR_LIBRARY_FILENAMES": str(mesa_config)}
+    original_environment = dict(environment)
+    original_mesa = mesa_config.read_bytes()
+    namespace = {"Path": Path, "json": json, "os": SimpleNamespace(environ=environment)}
+    exec(compile(function, "notebook_egl_configuration", "exec"), namespace)  # noqa: S102
+    if not nvidia_available:
+        with pytest.raises(RuntimeError, match="No preinstalled NVIDIA EGL"):
+            namespace["configure_nvidia_egl"](session, candidates)
+        assert environment == original_environment
+        assert not list(session.iterdir())
+    else:
+        selected = namespace["configure_nvidia_egl"](session, candidates)
+        assert selected == nvidia_library.resolve()
+        override = session / "nvidia-egl.json"
+        assert json.loads(override.read_text()) == {
+            "file_format_version": "1.0.0",
+            "ICD": {"library_path": str(nvidia_library.resolve())},
+        }
+        assert environment["__EGL_VENDOR_LIBRARY_FILENAMES"] == str(override.resolve())
+        assert environment["LD_LIBRARY_PATH"] == f"{selected.parent}:/existing/path"
+        assert environment["MUJOCO_GL"] == environment["PYOPENGL_PLATFORM"] == "egl"
+        assert list(session.iterdir()) == [override]
+    assert mesa_config.read_bytes() == original_mesa
+    assert list(vendor_directory.iterdir()) == [mesa_config]
+
+
+@pytest.mark.parametrize("actual_vendor", ["NVIDIA Corporation", "Mesa/X.org"])
+def test_notebook_egl_probe_checks_actual_vendor_before_accepting_pixels(
+    tmp_path, monkeypatch, actual_vendor
+):
+    """Nonempty pixels alone also pass with llvmpipe; the actual vendor is the gate."""
+    notebook = json.loads((REPO / "notebooks/jumper_colab.ipynb").read_text(encoding="utf-8"))
+    source = next("".join(cell["source"]) for cell in notebook["cells"]
+                  if cell["cell_type"] == "code"
+                  and "graphics_probe = " in "".join(cell["source"]))
+    tree = ast.parse(source)
+    probe = next(ast.literal_eval(node.value) for node in tree.body
+                 if isinstance(node, ast.Assign)
+                 and any(isinstance(target, ast.Name) and target.id == "graphics_probe"
+                         for target in node.targets))
+    result = tmp_path / "graphics.json"
+
+    class Pixels:
+        shape = (64, 64, 3)
+
+        def __ne__(self, other):
+            return self
+
+    class Renderer:
+        closed = False
+
+        def update_scene(self, data):
+            pass
+
+        def render(self):
+            return Pixels()
+
+        def close(self):
+            self.closed = True
+
+    renderer = Renderer()
+    fake_mujoco = SimpleNamespace(
+        MjModel=SimpleNamespace(from_xml_string=lambda xml: object()),
+        MjData=lambda model: object(), mj_forward=lambda model, data: None,
+        Renderer=lambda model, **kwargs: renderer,
+    )
+    fake_gl = SimpleNamespace(
+        GL_VENDOR=1, GL_RENDERER=2,
+        glGetString=lambda kind: (actual_vendor if kind == 1 else "example renderer").encode(),
+    )
+    monkeypatch.setitem(sys.modules, "mujoco", fake_mujoco)
+    monkeypatch.setitem(sys.modules, "numpy", SimpleNamespace(
+        any=lambda pixels, **kwargs: pixels, count_nonzero=lambda pixels: 4096,
+    ))
+    monkeypatch.setitem(sys.modules, "OpenGL", SimpleNamespace(GL=fake_gl))
+    monkeypatch.setattr(sys, "argv", ["isolated_egl_probe", str(result)])
+    monkeypatch.setenv("__EGL_VENDOR_LIBRARY_FILENAMES", str(tmp_path / "nvidia-egl.json"))
+    if actual_vendor.startswith("NVIDIA"):
+        exec(compile(probe, "isolated_egl_probe", "exec"), {})  # noqa: S102
+        graphics = json.loads(result.read_text())
+        assert graphics["gl_vendor"] == actual_vendor
+        assert graphics["nonzero_pixels"] == 4096 and graphics["shape"] == [64, 64, 3]
+    else:
+        with pytest.raises(RuntimeError, match="actual GL vendor=.*Mesa"):
+            exec(compile(probe, "isolated_egl_probe", "exec"), {})  # noqa: S102
+        assert not result.exists()
+    assert renderer.closed
