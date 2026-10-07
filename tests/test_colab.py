@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import signal
 import stat
 import subprocess
 import sys
@@ -16,7 +17,9 @@ import textwrap
 import threading
 import time
 import zipfile
+from collections import deque
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -332,3 +335,69 @@ def test_notebook_has_plain_python_cells_and_runs_repo_scripts_in_isolated_proce
     assert "files.download(str(BACKUP_ZIP))" in source
     backup_cell = next(cell for cell in code_cells if "files.download(str(BACKUP_ZIP))" in cell)
     assert "from google.colab import files" in backup_cell
+
+
+@pytest.mark.parametrize("existing_interpreter", [False, True])
+def test_notebook_bootstraps_only_target_venv_when_ensurepip_is_unavailable(
+    tmp_path, existing_interpreter
+):
+    """Model Colab's missing ensurepip and an earlier half-created pip-less environment."""
+    notebook = json.loads((REPO / "notebooks/jumper_colab.ipynb").read_text(encoding="utf-8"))
+    source = next("".join(cell["source"]) for cell in notebook["cells"]
+                  if cell["cell_type"] == "code" and "PYTHON = REPO" in "".join(cell["source"]))
+    bootstrap = source[source.index("PYTHON = REPO"):source.index("SESSION =")]
+    python = tmp_path / ".venv/bin/python"
+    if existing_interpreter:
+        python.parent.mkdir(parents=True)
+        python.touch()
+    builds, commands = [], []
+
+    class PiplessEnvBuilder:
+        def __init__(self, *, with_pip, system_site_packages):
+            # This is the failure the previous with_pip=True notebook encountered.
+            if with_pip:
+                raise RuntimeError("ensurepip is unavailable in this Colab runtime")
+            if system_site_packages:
+                raise RuntimeError("kernel site packages must remain isolated")
+
+        def create(self, directory):
+            builds.append(directory)
+            python.parent.mkdir(parents=True)
+            python.touch()
+
+    namespace = {
+        "REPO": tmp_path, "sys": sys,
+        "venv": SimpleNamespace(EnvBuilder=PiplessEnvBuilder),
+        "subprocess": SimpleNamespace(check_output=lambda *a, **k: "pip 25.2 from kernel"),
+        "run": lambda command: commands.append(command),
+    }
+    exec(compile(bootstrap, "notebook_venv_bootstrap", "exec"), namespace)  # noqa: S102
+    assert bool(builds) is not existing_interpreter
+    assert commands[-1] == [
+        sys.executable, "-m", "pip", "--python", python, "install", "--upgrade", "pip",
+    ]
+    assert all("--python" in command for command in commands if "install" in command)
+
+
+def test_notebook_reemits_subprocess_logs_and_keeps_a_bounded_failure_tail(capsys):
+    """Colab's RPC captures print outputs but misses inherited child file descriptors."""
+    notebook = json.loads((REPO / "notebooks/jumper_colab.ipynb").read_text(encoding="utf-8"))
+    source = next("".join(cell["source"]) for cell in notebook["cells"]
+                  if cell["cell_type"] == "code" and "def run(command" in "".join(cell["source"]))
+    function = source[source.index("def run(command"):source.index("# Fail before downloads")]
+    namespace = {"subprocess": subprocess, "deque": deque, "signal": signal}
+    exec(compile(function, "notebook_process_run", "exec"), namespace)  # noqa: S102
+    result = namespace["run"]([sys.executable, "-c", "print('visible child output')"])
+    assert isinstance(result, subprocess.CompletedProcess) and result.returncode == 0
+    assert "visible child output" in capsys.readouterr().out
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        namespace["run"]([
+            sys.executable, "-c",
+            ("import sys; [print('line', i) for i in range(70)]; "
+             "print('visible stderr', file=sys.stderr); raise SystemExit(7)"),
+        ])
+    output = capsys.readouterr().out
+    assert "visible stderr" in output and "line 0" in output
+    assert failure.value.returncode == 7
+    assert "line 69" in failure.value.output
+    assert "line 0\n" not in failure.value.output
