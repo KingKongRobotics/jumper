@@ -8,10 +8,12 @@ Heavy imports occur only in the runtime/rate checks, inside the isolated interpr
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import importlib
 import importlib.metadata
 import json
+import math
 import os
 import queue
 import re
@@ -349,8 +351,85 @@ def run_training(command: list[str], *, repo: Path, manifest_path: Path, config:
     return manifest
 
 
+def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dict:
+    """Export every recorded scalar; plotting never starts a TensorBoard server."""
+    from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
+    run, output = Path(run).resolve(), Path(output).resolve()
+    if output.suffix.lower() != ".json":
+        raise ValueError("metrics output must be a .json file")
+    if plot is not None:
+        plot = Path(plot).resolve()
+        if plot.suffix.lower() != ".png":
+            raise ValueError("metrics plot must be a .png file")
+    if not run.is_dir() or not any(run.glob("events.out.tfevents.*")):
+        raise ValueError(f"no TensorBoard event files in the selected run: {run}")
+    # Keep all samples, including repeated iteration numbers across resumed runs.
+    accumulator = EventAccumulator(str(run), size_guidance={"scalars": 0},
+                                   purge_orphaned_data=False)
+    accumulator.Reload()
+    tags = {}
+    for tag in sorted(accumulator.Tags().get("scalars", [])):
+        points = [{"step": int(event.step), "wall_time": float(event.wall_time),
+                   "value": float(event.value)} for event in accumulator.Scalars(tag)]
+        if points:
+            if any(not math.isfinite(point[key]) for point in points
+                   for key in ("wall_time", "value")):
+                raise ValueError(f"TensorBoard scalar contains a non-finite value: {tag}")
+            tags[tag] = sorted(points, key=lambda point: (point["step"], point["wall_time"]))
+    if not tags:
+        raise ValueError(f"TensorBoard event files contain no scalar samples: {run}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    metrics = {"schema": 1, "run": str(run), "tags": tags}
+    atomic_json(output, metrics)
+    with tempfile.NamedTemporaryFile(mode="w", newline="", encoding="utf-8",
+                                     dir=output.parent, prefix=".scalars-", delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        with temporary.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(["tag", "step", "wall_time", "value"])
+            for tag, points in tags.items():
+                for point in points:
+                    writer.writerow([tag, point["step"], point["wall_time"], point["value"]])
+        os.replace(temporary, output.with_suffix(".csv"))
+    finally:
+        temporary.unlink(missing_ok=True)
+    selected = []
+    if plot is not None:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from matplotlib import pyplot as plt
+
+        preferred = ("Train/mean_reward", "Train/mean_episode_length",
+                     "Loss/value_function", "Loss/surrogate", "Policy/mean_std",
+                     "Perf/total_fps")
+        selected = [tag for tag in preferred if tag in tags]
+        selected += [tag for tag in tags if tag not in selected][:6 - len(selected)]
+        rows = (len(selected) + 1) // 2
+        figure, axes = plt.subplots(rows, 2, figsize=(12, 3.5 * rows), squeeze=False)
+        try:
+            for axis, tag in zip(axes.flat, selected):
+                points = tags[tag]
+                axis.plot([point["step"] for point in points],
+                          [point["value"] for point in points])
+                axis.set(title=tag, xlabel="Training iteration", ylabel="Recorded scalar value")
+                axis.grid(True, alpha=0.3)
+            for axis in list(axes.flat)[len(selected):]:
+                axis.set_visible(False)
+            figure.tight_layout()
+            plot = Path(plot)
+            plot.parent.mkdir(parents=True, exist_ok=True)
+            figure.savefig(plot, dpi=140)
+        finally:
+            plt.close(figure)
+    return {"run": str(run), "output": str(output), "scalar_tags": len(tags),
+            "samples": sum(len(points) for points in tags.values()), "plotted_tags": selected}
+
+
 def create_backup(run: Path, output: Path, *, export: Path | None = None,
-                  video: Path | None = None) -> Path:
+                  video: Path | None = None, extras: Path | None = None) -> Path:
     """Package a named run and optional results, without searching unrelated logs."""
     run, output = Path(run).resolve(), Path(output).resolve()
     if not (run / MANIFEST).is_file():
@@ -365,6 +444,11 @@ def create_backup(run: Path, output: Path, *, export: Path | None = None,
         sources.append(("export", Path(export).resolve()))
     if video is not None:
         sources.append(("video", Path(video).resolve()))
+    if extras is not None:
+        extras = Path(extras)
+        if extras.is_symlink() or not extras.is_dir():
+            raise ValueError("backup extras must be a directory without symlinks")
+        sources.append(("artifacts", extras.resolve()))
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix=".backup-", delete=False) as stream:
         temporary = Path(stream.name)
     created = False
@@ -537,6 +621,11 @@ def main() -> None:
     backup.add_argument("--out", type=Path, required=True)
     backup.add_argument("--export", type=Path)
     backup.add_argument("--video", type=Path)
+    backup.add_argument("--extras", type=Path)
+    metrics = commands.add_parser("metrics")
+    metrics.add_argument("--run", type=Path, required=True)
+    metrics.add_argument("--out", type=Path, required=True)
+    metrics.add_argument("--plot", type=Path)
     restore = commands.add_parser("restore")
     restore.add_argument("--archive", type=Path, required=True)
     restore.add_argument("--destination", type=Path, required=True)
@@ -562,7 +651,10 @@ def main() -> None:
         run_training(command, repo=args.repo, manifest_path=args.manifest, config=config,
                      drive_root=args.drive_root, resume=args.resume)
     elif args.mode == "backup":
-        print(create_backup(args.run, args.out, export=args.export, video=args.video))
+        print(create_backup(args.run, args.out, export=args.export, video=args.video,
+                            extras=args.extras))
+    elif args.mode == "metrics":
+        print(json.dumps(collect_metrics(args.run, args.out, plot=args.plot)))
     elif args.mode == "restore":
         restored = restore_backup(args.archive, args.destination)
         atomic_json(args.out, {"checkpoint": str(restored), "run": str(restored.parent)})

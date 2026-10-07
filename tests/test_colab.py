@@ -337,6 +337,152 @@ def test_notebook_has_plain_python_cells_and_runs_repo_scripts_in_isolated_proce
     assert "from google.colab import files" in backup_cell
 
 
+def notebook_cell(fragment):
+    notebook = json.loads((REPO / "notebooks/jumper_colab.ipynb").read_text(encoding="utf-8"))
+    return next("".join(cell["source"]) for cell in notebook["cells"]
+                if cell["cell_type"] == "code" and fragment in "".join(cell["source"]))
+
+
+@pytest.mark.parametrize("overrides", [
+    {"CHECKOUT_FOLDER": "../another"},
+    {"CHECKOUT_FOLDER": "a/b"},
+    {"SIM_SECONDS": 0},
+    {"SIM_SECONDS": float("inf")},
+    {"SIM_FPS": -1},
+    {"SIM_WIDTH": 641},
+    {"SIM_HEIGHT": 0},
+    {"SIM_CAMERA_DISTANCE": -1},
+    {"SIM_SCENE": "invented"},
+    {"CORE_VERSION_OVERRIDES": '{"untrusted-package":"1.0"}'},
+    {"CORE_VERSION_OVERRIDES": '{"numpy":"2.5.2 --extra-index-url attacker"}'},
+    {"CORE_VERSION_OVERRIDES": '{"torch":"2.8.0"}'},
+])
+def test_notebook_form_refuses_unsafe_or_invalid_choices_before_setup(overrides):
+    """A valid form is a control; reject edited parameters before any GPU subprocess."""
+    source = notebook_cell("CORE_VERSION_OVERRIDES =")
+    namespace = {}
+    exec(compile(source, "valid_colab_form", "exec"), namespace)  # noqa: S102
+    assert namespace["NUM_ENVS"] == 256 and namespace["SIM_SCENE"] == "task default"
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and target.id in overrides:
+                node.value = ast.Constant(overrides[target.id])
+    with pytest.raises(ValueError):
+        exec(compile(ast.fix_missing_locations(tree), "invalid_colab_form", "exec"), {})  # noqa: S102
+
+
+@pytest.mark.parametrize("scene,distance,measure", [
+    ("task default", 0.0, False), ("ice", 1.4, True),
+])
+def test_notebook_simulation_uses_control_time_and_records_the_selected_checkpoint(
+    tmp_path, scene, distance, measure
+):
+    """Changing recording FPS must not change control steps or the policy's physics rate."""
+    session = tmp_path / "session"
+    session.mkdir()
+    run_dir = tmp_path / "selected-run"
+    run_dir.mkdir()
+    model = run_dir / "model_20.pt"
+    model.touch()
+    artifacts = session / "artifacts"
+    artifacts.mkdir()
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        if "rates" in command:
+            Path(command[command.index("--out") + 1]).write_text(
+                json.dumps({"physics_hz": 200.0, "control_hz": 50.0})
+            )
+        else:
+            Path(command[command.index("--video") + 1]).write_bytes(b"new MP4")
+            if "--measure" in command:
+                directory = model.parent / "measure"
+                directory.mkdir()
+                (directory / "measure.csv").write_text("t,pos/joint\n0.02,0.1\n")
+                (directory / "measure.png").write_bytes(b"plot")
+
+    namespace = {
+        "SESSION": session, "ARTIFACTS": artifacts, "REPO": tmp_path,
+        "PYTHON": tmp_path / ".venv/python", "TASK": "robot.walk", "MODEL": "robot",
+        "CHECKPOINT_PATH": model, "RUN_DIR": run_dir, "training": {"operation": "selected"},
+        "SIM_SECONDS": 1.01, "SIM_FPS": 12.0, "SIM_WIDTH": 800, "SIM_HEIGHT": 600,
+        "SIM_SCENE": scene, "SIM_CAMERA_DISTANCE": distance, "RECORD_JOINTS": measure,
+        "run": run, "json": json, "math": __import__("math"), "shutil": __import__("shutil"),
+        "display": lambda value: None, "Video": lambda *args, **kwargs: None,
+        "Image": lambda **kwargs: None,
+    }
+    exec(compile(notebook_cell("SIM_STEPS ="), "record_simulation", "exec"), namespace)  # noqa: S102
+    command = commands[-1]
+    assert command[command.index("--steps") + 1] == "51"
+    assert command[command.index("--physics-hz") + 1] == "200.0"
+    assert command[command.index("--video-fps") + 1] == "12.0"
+    assert command[command.index("--video-width") + 1] == "800"
+    assert "--measure" in command if measure else "--measure" not in command
+    assert "--scene" not in command if scene == "task default" else command[
+        command.index("--scene") + 1
+    ] == scene
+    assert "--video-distance" not in command if distance == 0 else command[
+        command.index("--video-distance") + 1
+    ] == str(distance)
+    saved = json.loads((artifacts / "simulation-settings.json").read_text())
+    assert saved["checkpoint"] == str(model) and saved["control_steps"] == 51
+    assert saved["simulated_seconds"] == 1.02 and saved["observation_noise"] is True
+    assert namespace["SIMULATION_CHECKPOINT"] == str(model)
+    if measure:
+        assert namespace["MEASUREMENT_CHECKPOINT"] == str(model)
+        assert (artifacts / "measure.csv").is_file()
+
+
+@pytest.mark.parametrize("matching", [False, True])
+def test_notebook_backup_refuses_stale_video_and_export_without_blocking_checkpoints(
+    tmp_path, monkeypatch, matching
+):
+    """Old preview/export globals must not contaminate a newer training run's portable ZIP."""
+    session = tmp_path / "session"
+    session.mkdir()
+    for name in ("runtime.json", "graphics.json"):
+        (session / name).write_text("{}")
+    run_dir = tmp_path / "new-run"
+    run_dir.mkdir()
+    model = run_dir / "model_20.pt"
+    model.touch()
+    manifest = session / "training.json"
+    manifest.write_text(json.dumps({
+        "run_directory": str(run_dir), "operation": "new", "checkpoint": str(model),
+        "checkpoints": {model.name: "recorded"},
+    }))
+    video = session / "old-video.mp4"
+    video.write_bytes(b"MP4")
+    commands, downloads = [], []
+    files = SimpleNamespace(download=lambda name: downloads.append(name))
+    monkeypatch.setitem(sys.modules, "google", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "google.colab", SimpleNamespace(files=files))
+
+    def run(command, **kwargs):
+        commands.append(command)
+        Path(command[command.index("--out") + 1]).write_bytes(b"ZIP")
+
+    chosen = str(model) if matching else str(tmp_path / "old-run/model_20.pt")
+    namespace = {
+        "SESSION": session, "REPO": tmp_path, "PYTHON": tmp_path / ".venv/python",
+        "TRAIN_MANIFEST": manifest, "TASK": "robot.walk", "DOWNLOAD_FILES": False,
+        "EXPORT_SUCCESS": True, "EXPORTED_CHECKPOINT": chosen,
+        "SIMULATION_CHECKPOINT": chosen, "EXPORT_DIR": session / "old-export",
+        "TRAIN_VIDEO": video, "json": json, "Path": Path, "uuid": __import__("uuid"),
+        "run": run,
+    }
+    exec(compile(notebook_cell("BACKUP_CHECKPOINT ="), "package_selected_run", "exec"), namespace)  # noqa: S102
+    command = commands[0]
+    assert "--export" in command if matching else "--export" not in command
+    assert "--video" in command if matching else "--video" not in command
+    assert command[command.index("--run") + 1] == run_dir
+    assert command[command.index("--extras") + 1] == session / "artifacts/new"
+    assert downloads == []
+
+
 @pytest.mark.parametrize("existing_interpreter", [False, True])
 def test_notebook_bootstraps_only_target_venv_when_ensurepip_is_unavailable(
     tmp_path, existing_interpreter
