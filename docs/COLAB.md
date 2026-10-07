@@ -11,15 +11,16 @@ Your computer only needs a browser; no local installation, WSL or local GPU is n
 The [quick start](../notebooks/README.md) includes the video from this training run.
 That video shows simulation, not physical-robot performance.
 
-Open [the notebook in Colab](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb),
+Open [the notebook in Colab](https://colab.research.google.com/github/KingKongRobotics/jumper/blob/main/notebooks/jumper_colab.ipynb),
 save a copy if you want to keep your changes, and select a GPU runtime. Run the setup
 and checks before choosing the demonstration or training cells. A GPU allocation is
 variable: use the device and memory reported by the checks, rather than assuming a
 particular GPU is available.
 
-This link currently opens the pre-merge `codex/colab-training-and-video` branch in
-the `tianrking/jumper` fork. After the change is merged upstream, the entry can move
-to `KingKongRobotics/jumper` on `main`; until then, use the branch link above.
+The main link and notebook defaults use `KingKongRobotics/jumper` on `main`.
+Before merge, open the [PR preview](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb) and set
+`REPOSITORY_URL` to `https://github.com/tianrking/jumper.git` and
+`SOURCE_REVISION` to `codex/colab-training-and-video` in the first form.
 
 ## Choose the settings
 
@@ -43,7 +44,11 @@ Version overrides accept only exact versions of `torch`, `mujoco`, `mujoco-warp`
 `warp-lang`, `numpy` and `tensordict`. URLs, ranges and arbitrary pip arguments are
 not accepted. The supported Torch/torchvision pair is 2.9.1/0.24.1; a different
 pair requires its own validation. Also restore the manifest's source commit using
-`SOURCE_REVISION`. A matching package list still needs a compatible GPU driver.
+`SOURCE_REVISION`. The repository must contain that exact commit: if a squash
+merge does not retain it upstream, restore the tested `19e8f4d` backup from
+`https://github.com/tianrking/jumper.git`. Use a fresh runtime or a new
+`CHECKOUT_FOLDER` when switching repositories. A matching package list still
+needs a compatible GPU driver.
 
 ## Watch the demonstration first
 

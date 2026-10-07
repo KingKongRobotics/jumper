@@ -1,4 +1,4 @@
-<!-- tracks: COLAB.md @ sha256:70e4a1fa8feaf73d -->
+<!-- tracks: COLAB.md @ sha256:3ef1d8c25383f177 -->
 
 # 在 Google Colab 中运行 Jumper
 
@@ -12,14 +12,15 @@
 [快速开始](../notebooks/README.zh.md)中包含本次训练的视频；视频展示的是仿真，
 不代表实体机器人表现。
 
-[在 Colab 中打开 Notebook](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)，
+[在 Colab 中打开 Notebook](https://colab.research.google.com/github/KingKongRobotics/jumper/blob/main/notebooks/jumper_colab.ipynb)，
 如果想保留自己的修改，先保存一份副本，再选择 GPU 运行时。在运行演示或训练单元
 之前，先完成安装和检查。分配到的 GPU 会变化，应以检查单元报告的设备和显存为准，
 不要假定一定能获得某一种 GPU。
 
-这个入口目前指向 `tianrking/jumper` fork 中尚未合并的
-`codex/colab-training-and-video` 分支。变更合并到上游后，可以把入口切换为
-`KingKongRobotics/jumper` 的 `main`；合并前请使用上面的分支入口。
+正式入口和 Notebook 默认值使用 `KingKongRobotics/jumper` 的 `main`。
+合并前，请打开 [PR 预览](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)，在第一个表单中将
+`REPOSITORY_URL` 设为 `https://github.com/tianrking/jumper.git`，
+`SOURCE_REVISION` 设为 `codex/colab-training-and-video`。
 
 ## 选择参数
 
@@ -41,7 +42,10 @@
 版本覆盖只接受 `torch`、`mujoco`、`mujoco-warp`、`warp-lang`、`numpy` 和
 `tensordict` 的精确版本，不接受 URL、版本范围或任意 pip 参数。支持的
 Torch/torchvision 配对为 2.9.1/0.24.1，其他配对需要单独验证。同时要通过
-`SOURCE_REVISION` 恢复清单记录的源码提交。包版本一致仍需要兼容的 GPU 驱动。
+`SOURCE_REVISION` 恢复清单记录的源码提交。仓库必须包含这个确切提交：
+如果压缩合并后上游不保留它，恢复本次 `19e8f4d` 备份时请使用
+`https://github.com/tianrking/jumper.git`。切换仓库时，使用新的运行时或新的
+`CHECKOUT_FOLDER`。包版本一致仍需要兼容的 GPU 驱动。
 
 ## 先观看演示
 

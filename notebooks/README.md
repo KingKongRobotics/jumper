@@ -1,13 +1,15 @@
 # Jumper on Colab
 
-[Open in Colab](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)
+[Open in Colab](https://colab.research.google.com/github/KingKongRobotics/jumper/blob/main/notebooks/jumper_colab.ipynb)
 · [中文](README.zh.md) · [Full guide](../docs/COLAB.md)
 
 Train Jumper on a Colab GPU, watch it in MuJoCo, and download the results.
 Your computer only needs a browser; WSL and a local GPU are not needed.
 
-The link opens the `codex/colab-training-and-video` branch of `tianrking/jumper`.
-Use this branch while the change is awaiting upstream merge.
+The main link and notebook defaults use `KingKongRobotics/jumper` on `main`.
+Before this PR is merged, open the [preview](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb) and set
+`REPOSITORY_URL` to `https://github.com/tianrking/jumper.git` and
+`SOURCE_REVISION` to `codex/colab-training-and-video` in the first form.
 
 ## Start here
 
@@ -54,7 +56,10 @@ in the simulation, not on a physical robot.
 The files are kept per run and tied to the selected checkpoint, so an old video
 or export is not silently included as a new result. Restore the ZIP in a later
 session, use its recorded source and core package versions, and continue training.
-Restoring the tested backup and running five more iterations succeeded.
+Restoring the tested backup and running five more iterations succeeded. For that
+backup, use `tianrking/jumper` at the recorded `19e8f4d` commit, not a newer `main`;
+a squash merge may not retain the original commit. Use a fresh runtime or checkout
+folder when switching repositories.
 
 `DOWNLOAD_FILES` controls automatic browser downloads; turning it off leaves
 previews and files available for manual download. Drive checkpoint snapshots are
@@ -65,7 +70,7 @@ optional. Drive mounting was disabled in the test and has not been verified.
 The workflow ran on a Tesla T4 using source `19e8f4d`: five smoke iterations,
 500 main iterations, video replay, 500 rows of joint measurements, 51 scalar tags
 with 25,500 samples, ONNX export, ZIP backup, restore and five further iterations.
-The final notebook edits after that run change imports and documentation.
+Later notebook edits change imports, documentation and the default repository/reference.
 
 This demonstrates the workflow for the tested task. It does not establish that
 every task works, that the walking policy has converged, or that it can run safely

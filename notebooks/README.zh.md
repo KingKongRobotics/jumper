@@ -1,15 +1,17 @@
-<!-- tracks: README.md @ sha256:59d337037adf37f1 -->
+<!-- tracks: README.md @ sha256:19ed1a5b6c77e3ff -->
 
 # 在 Colab 上运行 Jumper
 
-[在 Colab 中打开](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)
+[在 Colab 中打开](https://colab.research.google.com/github/KingKongRobotics/jumper/blob/main/notebooks/jumper_colab.ipynb)
 · [English](README.md) · [完整指南](../docs/COLAB.zh.md)
 
 用 Colab GPU 训练 Jumper，在 MuJoCo 中看回放，再把结果下载回来。
 你的电脑只需要浏览器，不需要 WSL 或本地 GPU。
 
-入口指向 `tianrking/jumper` 的 `codex/colab-training-and-video` 分支。
-变更合并到上游之前，请使用这个分支。
+正式入口和 Notebook 默认值使用 `KingKongRobotics/jumper` 的 `main`。
+PR 合并前，请打开[预览入口](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)，在第一个表单中将
+`REPOSITORY_URL` 设为 `https://github.com/tianrking/jumper.git`，
+`SOURCE_REVISION` 设为 `codex/colab-training-and-video`。
 
 ## 开始使用
 
@@ -51,7 +53,9 @@ Notebook 直接显示 MP4。这些设置改变回放，不修改已保存的策�
 
 文件按每次运行保存，并与选定检查点关联，不会把旧视频或旧导出悄悄当成新结果
 打包。下次会话可以恢复 ZIP，使用其中记录的源码和核心包版本继续训练。本次
-备份已经成功恢复，并继续训练了五次迭代。
+备份已经成功恢复，并继续训练了五次迭代。恢复这份备份时，请使用
+`tianrking/jumper` 中记录的 `19e8f4d` 提交，不要直接改用较新的 `main`；
+压缩合并可能不保留原始提交。切换仓库时，使用新的运行时或克隆目录。
 
 `DOWNLOAD_FILES` 控制浏览器自动下载。关闭后，预览和文件仍可手动查看、下载。
 Drive 检查点快照为可选项，本次测试关闭了 Drive 挂载，尚未验证它。
@@ -60,7 +64,7 @@ Drive 检查点快照为可选项，本次测试关闭了 Drive 挂载，尚未�
 
 流程已在 Tesla T4 上使用源码 `19e8f4d` 运行：五轮短训练检查、500 次主训练、
 视频回放、500 行关节测量、51 个标量标签和 25,500 个采样、ONNX 导出、ZIP
-备份、恢复，以及再训练五次迭代。此后最终 Notebook 修改的是 imports 和文档。
+备份、恢复，以及再训练五次迭代。此后 Notebook 修改的是 imports、文档和默认仓库/版本入口。
 
 这说明已测试任务的工作流程可用，不代表所有任务都已验证、行走策略已经收敛，
 或可以安全地在实体机器人上运行。参数说明和测试结果见
