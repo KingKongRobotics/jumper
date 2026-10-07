@@ -226,21 +226,24 @@ Tesla T4, with Python 3.13, PyTorch 2.9.1+cu126, MuJoCo 3.11 and Warp 1.18.
 These results cover the tested branch's core code, rather than guaranteeing every
 future Colab image or GPU allocation:
 
-The results below come from the earlier 20-iteration plus five-iteration restore
-acceptance run. The added replay settings, joint telemetry, full scalar exports
-and per-run artifact packaging have not yet completed the new 500-iteration T4
-acceptance run. Do not interpret the earlier results as verification of every
-new notebook option.
+The current source (`19e8f4d`) completed the default 500-iteration T4 run, including
+joint telemetry, scalar exports and per-run artifact packaging. The confirmed
+workflow and regression results are recorded below.
 
 | Check | Observed result |
 |---|---|
-| Focused tests | 76 passed: 57 Colab/video checks and 19 translation checks. |
 | GPU training smoke | Five PPO iterations with 256 `jumper.tripod` environments completed. |
-| Training and restore | A 20-iteration run completed; its checkpoint snapshot and manifest were backed up, restored into a fresh local destination, and used for five additional iterations. |
-| ONNX export | The 411-input, 20-output actor passed comparison with a maximum absolute error of `3.58e-7`. |
+| Main training | 500 iterations with 256 `jumper.tripod` environments completed and produced `model_499.pt`. |
+| Restore | The ZIP was restored and training continued for five iterations from `model_499.pt`, saving `model_503.pt` with the same source and core package versions. |
+| ONNX export comparison | The 411-input, 20-output actor passed comparison with a maximum absolute error of `7.15e-7`. |
 | Supplied dance recording | A 500-step MP4 was generated with NVIDIA EGL on the actual T4 GPU and verified by local decoding and cloud `ffprobe`. |
 | Trained-policy recording | A 500-step MP4 of the newly trained policy was generated with NVIDIA EGL on the actual T4 GPU and passed the same video checks. |
-| Complete test suite | The sequential run finished with 1067 passed, 25 skipped, 3 failed and 140 warnings in 239.48 seconds. |
+| Joint telemetry | 500 CSV rows include position, velocity, applied actuator torque and foot force; the corresponding PNG was generated. |
+| Training curves | 51 scalar tags and 25,500 samples were exported, with a six-panel curve PNG. |
+| Portable backup | A 121,887,490-byte ZIP passed CRC checks and contains the run's checkpoints and generated artifacts. |
+| Replay parameter variations | A two-second, 320 x 240, 20 fps studio replay at 1.5 m camera distance succeeded with joint recording off, producing 41 H.264 frames. Restoring the default ten-second settings succeeded and produced a fresh 500-row joint recording. |
+| Focused checks | All 104 passed in 6.89 seconds. |
+| All test files | All 62 `test_*.py` files ran in 16 sequential batches, at most four files per pytest process. JUnit totals: 1123 tests, 1096 passed, 25 skipped, 2 failed, 0 errors; summed run time 354.651 seconds. |
 | Google Drive mounting | Disabled in this session and not tested. |
 
 The graphics check used NVIDIA EGL rather than Mesa software rendering. The setup
@@ -249,26 +252,25 @@ it did not change the system driver. The backup/restore result verifies the loca
 snapshot mechanism, not Google Drive authorization or remote persistence.
 Both recordings contain 301 H.264 frames at 640 x 480 and 30 fps, with a duration
 of 10.033333 seconds. This includes the initial frame as well as frames sampled
-during the ten-second simulation.
+during the ten-second simulation. With joint recording disabled, the preceding
+measurement files were preserved under `replay-history` and excluded from that
+replay's attachments, rather than being presented as new measurements.
 
-The full suite is not clean. Its three failures are in existing tests outside the
-Colab/video changes: posture mirror geometry, agreement on the native backend's
-automatic thread count, and TensorBoard port selection with a lingering `TIME_WAIT`
-socket. The relevant core code and tests were not changed. All three failures were
-reproduced on the upstream baseline in the same Colab environment. The thread-count
-failure was reproduced in order with
-`test_five_foot.py::test_the_operator_actually_closes_the_claw` followed by
-`test_resolve.py::test_backend_and_resolve_agree_on_the_default`: the resolver
-reported two threads where the test expected eight. This records the sequence
-dependence rather than diagnosing its underlying cause. The 25 skips are not passes.
+The single-process full pytest run was terminated by the system with `SIGKILL`
+(`-9`) at about 57% completion. The completed coverage therefore comes from the
+16 bounded batches above, not a completed single-process suite. The batch totals
+include two failures: posture mirror geometry and TensorBoard port selection with
+a lingering `TIME_WAIT` socket. Both were reproduced on the upstream baseline in
+the same Colab environment. Skipped tests are not passes.
 
-Ruff 0.16.10 reported 346 findings across the repository, compared with 350 on the
-upstream baseline; comparison found no added findings. On the changed Python files
-it reported only the existing `EXE001` finding for `scripts/play.py`; that file's
-shebang and executable mode were unchanged. This is not a claim that the
-repository-wide lint check passes.
+A separate baseline sequence, running the claw operator test before the resolver
+default-thread test, also reproduced the native thread-count discrepancy of two
+versus eight. The resolver passed in the bounded branch run, so that baseline
+sequence result is not counted as a third failure in the 1123-test batch total.
+Separate processes do not establish that all tests coexist in one shared process.
 
-These short runs establish that the tested training, checkpoint, restore and
+These runs establish that the tested training, checkpoint, restore and
 export paths work. They do not establish policy convergence, a robust gait or
-real-robot behavior. The full-suite failures remain known limitations of this
-validation, and Google Drive mounting was not tested.
+real-robot behavior. The two batch failures, the single-process interruption and
+the baseline sequence dependence limit the regression evidence. Google Drive
+mounting was not tested.
