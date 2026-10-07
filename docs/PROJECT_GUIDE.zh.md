@@ -1,4 +1,4 @@
-<!-- tracks: PROJECT_GUIDE.md @ sha256:5b577e687264ed56 -->
+<!-- tracks: PROJECT_GUIDE.md @ sha256:83337a5e4c8afaba -->
 
 # Jumper 项目指南
 

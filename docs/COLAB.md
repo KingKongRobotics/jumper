@@ -36,6 +36,11 @@ not silently replace the vendored training packages. Jumper requires Python
 version, an unavailable CUDA device or a GPU driver/backend mismatch; it should not
 turn the requested GPU training into an unnoticed CPU run.
 
+In the tested Colab session, `.venv` occupied about 7.2 GiB and the project about
+580 MiB excluding the virtual environment and training logs. These are measured
+disk sizes, not download traffic; allow additional space for checkpoints, videos
+and temporary installation files.
+
 The supplied checkpoints are examples built with their recorded task and model
 configuration. A newer source revision can change observations, actions or geometry.
 If the loader refuses an example, retain that error and check its provenance rather
@@ -86,6 +91,8 @@ have different control periods, so the same step count need not produce the same
 duration. `--physics-hz 200` keeps the dance replay's physics rate at the rate used
 for training. Headless replay still needs working offscreen rendering. On the Colab
 Linux GPU runtime the notebook requests EGL with `MUJOCO_GL=egl`.
+The setup locates the runtime's existing NVIDIA EGL libraries and writes a vendor
+JSON under the task's own directory. It does not replace the system GPU driver.
 
 | Option | Meaning |
 |---|---|
@@ -157,9 +164,31 @@ artifacts. Board conversion and deployment follow the separate
 
 ## Validation boundary
 
-Real Google Colab validation is in progress; the complete workflow has not yet
-passed that acceptance run. Local source checks and replay of an existing bundle
-are narrower evidence. Installation
-on an allocated Colab GPU, Warp execution, offscreen MP4 rendering, a training run,
-export and persistence/resume each need their own successful run before claiming
-the full notebook works there.
+The core workflow has been exercised in a real Google Colab session on an NVIDIA
+Tesla T4, with Python 3.13, PyTorch 2.9.1+cu126, MuJoCo 3.11 and Warp 1.18.
+These results cover the tested branch's core code, rather than guaranteeing every
+future Colab image or GPU allocation:
+
+| Check | Observed result |
+|---|---|
+| Focused tests | 53 passed. |
+| GPU training smoke | Five PPO iterations with 256 `jumper.tripod` environments completed. |
+| Training and restore | A 20-iteration run completed; its checkpoint snapshot and manifest were backed up, restored into a fresh local destination, and used for five additional iterations. |
+| ONNX export | The 411-input, 20-output actor passed comparison with a maximum absolute error of `3.58e-7`. |
+| Supplied dance recording | A 500-step MP4 was generated with NVIDIA EGL on the actual T4 GPU and verified by local decoding and cloud `ffprobe`. |
+| Trained-policy recording | A 500-step MP4 of the newly trained policy was generated with NVIDIA EGL on the actual T4 GPU and passed the same video checks. |
+| Complete test suite | A new sequential run is pending; no final full-suite result is claimed here. |
+| Google Drive mounting | Disabled in this session and not tested. |
+
+The graphics check used NVIDIA EGL rather than Mesa software rendering. The setup
+selected the existing NVIDIA graphics libraries through task-local vendor JSON;
+it did not change the system driver. The backup/restore result verifies the local
+snapshot mechanism, not Google Drive authorization or remote persistence.
+Both recordings contain 301 H.264 frames at 640 x 480 and 30 fps, with a duration
+of 10.033333 seconds. This includes the initial frame as well as frames sampled
+during the ten-second simulation.
+
+These short runs establish that the tested training, checkpoint, restore and
+export paths work. They do not establish policy convergence, a robust gait or
+real-robot behavior. The complete-suite result remains explicitly pending, and
+Drive mounting needs its own acceptance run.

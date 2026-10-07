@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:6d77fbc83ef18036 -->
+<!-- tracks: README.md @ sha256:6c35e964fc575f2d -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
