@@ -369,18 +369,30 @@ def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dic
                                    purge_orphaned_data=False)
     accumulator.Reload()
     tags = {}
+    nonfinite_samples = {}
     for tag in sorted(accumulator.Tags().get("scalars", [])):
         points = [{"step": int(event.step), "wall_time": float(event.wall_time),
                    "value": float(event.value)} for event in accumulator.Scalars(tag)]
         if points:
-            if any(not math.isfinite(point[key]) for point in points
-                   for key in ("wall_time", "value")):
-                raise ValueError(f"TensorBoard scalar contains a non-finite value: {tag}")
+            if any(not math.isfinite(point["wall_time"]) for point in points):
+                raise ValueError(f"TensorBoard scalar contains a non-finite wall time: {tag}")
+            invalid = 0
+            for point in points:
+                value = point["value"]
+                if not math.isfinite(value):
+                    point["value"] = ("NaN" if math.isnan(value) else
+                                      "Infinity" if value > 0 else "-Infinity")
+                    invalid += 1
+            if invalid:
+                nonfinite_samples[tag] = invalid
+                print(f"[WARN] {tag}: {invalid} non-finite scalar samples retained as "
+                      "NaN/Infinity/-Infinity strings; plots show gaps.", flush=True)
             tags[tag] = sorted(points, key=lambda point: (point["step"], point["wall_time"]))
     if not tags:
         raise ValueError(f"TensorBoard event files contain no scalar samples: {run}")
     output.parent.mkdir(parents=True, exist_ok=True)
-    metrics = {"schema": 1, "run": str(run), "tags": tags}
+    metrics = {"schema": 1, "run": str(run), "tags": tags,
+               "nonfinite_samples": nonfinite_samples}
     atomic_json(output, metrics)
     with tempfile.NamedTemporaryFile(mode="w", newline="", encoding="utf-8",
                                      dir=output.parent, prefix=".scalars-", delete=False) as stream:
@@ -405,19 +417,24 @@ def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dic
         preferred = ("Train/mean_reward", "Train/mean_episode_length",
                      "Loss/value", "Loss/surrogate", "Policy/mean_std",
                      "Perf/total_fps")
-        selected = [tag for tag in preferred if tag in tags]
-        selected += [tag for tag in tags if tag not in selected][:6 - len(selected)]
-        rows = (len(selected) + 1) // 2
+        finite_tags = [tag for tag, points in tags.items()
+                       if any(isinstance(point["value"], float) for point in points)]
+        selected = [tag for tag in preferred if tag in finite_tags]
+        selected += [tag for tag in finite_tags if tag not in selected][:6 - len(selected)]
+        rows = max(1, (len(selected) + 1) // 2)
         figure, axes = plt.subplots(rows, 2, figsize=(12, 3.5 * rows), squeeze=False)
         try:
             for axis, tag in zip(axes.flat, selected):
                 points = tags[tag]
                 axis.plot([point["step"] for point in points],
-                          [point["value"] for point in points])
+                          [point["value"] if isinstance(point["value"], float) else float("nan")
+                           for point in points])
                 axis.set(title=tag, xlabel="Training iteration", ylabel="Recorded scalar value")
                 axis.grid(True, alpha=0.3)
             for axis in list(axes.flat)[len(selected):]:
                 axis.set_visible(False)
+            if not selected:
+                figure.suptitle("No finite scalar values to plot; inspect metrics.json and CSV")
             figure.tight_layout()
             plot = Path(plot)
             plot.parent.mkdir(parents=True, exist_ok=True)
@@ -425,7 +442,8 @@ def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dic
         finally:
             plt.close(figure)
     return {"run": str(run), "output": str(output), "scalar_tags": len(tags),
-            "samples": sum(len(points) for points in tags.values()), "plotted_tags": selected}
+            "samples": sum(len(points) for points in tags.values()), "plotted_tags": selected,
+            "nonfinite_samples": nonfinite_samples}
 
 
 def create_backup(run: Path, output: Path, *, export: Path | None = None,

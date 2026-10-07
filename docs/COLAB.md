@@ -102,6 +102,8 @@ After the main run, the training-curve cell reads the TensorBoard events from th
 exact run. It exports the complete recorded scalar history to `metrics.json` and
 `metrics.csv`, and displays `training-curves.png` with up to six selected curves.
 The PNG is a summary; the JSON and CSV retain all recorded scalar tags and samples.
+Non-finite values remain explicit `NaN`, `Infinity` or `-Infinity` strings in JSON
+and CSV, with warning counts; the plot leaves gaps rather than inventing values.
 Check reward, episode length and losses before interpreting the policy's progress.
 
 ## Record a replay

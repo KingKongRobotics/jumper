@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import math
 import sys
 import zipfile
 from pathlib import Path
@@ -79,6 +80,47 @@ def test_all_resume_samples_are_sorted_and_written_to_json_and_csv(tmp_path, mon
     assert result["samples"] == 1006
 
 
+def test_nonfinite_scalars_are_preserved_as_explicit_json_and_csv_markers(
+    tmp_path, monkeypatch, capsys
+):
+    event_reader(monkeypatch, {
+        "Train/mean_reward": [SimpleNamespace(step=3, wall_time=2, value=7.0)],
+        "Curriculum/command/lin_err": [
+            SimpleNamespace(step=index, wall_time=index + 1, value=value)
+            for index, value in enumerate([float("nan"), float("inf"), -float("inf"), 0.25])
+        ],
+    })
+    output = tmp_path / "metrics.json"
+    summary = colab.collect_metrics(run_events(tmp_path), output)
+
+    def reject_nonstandard_constant(value):
+        raise ValueError(f"invalid bare JSON constant: {value}")
+
+    data = json.loads(output.read_text(), parse_constant=reject_nonstandard_constant)
+    values = [point["value"] for point in data["tags"]["Curriculum/command/lin_err"]]
+    assert values == ["NaN", "Infinity", "-Infinity", 0.25]
+    assert data["tags"]["Train/mean_reward"][0]["value"] == 7.0
+    assert summary["samples"] == 5
+    assert summary["nonfinite_samples"] == {"Curriculum/command/lin_err": 3}
+    assert data["nonfinite_samples"] == summary["nonfinite_samples"]
+    with output.with_suffix(".csv").open(newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    assert [row["value"] for row in rows[:4]] == ["NaN", "Infinity", "-Infinity", "0.25"]
+    warning = capsys.readouterr().out
+    assert "[WARN] Curriculum/command/lin_err: 3" in warning
+    assert "retained" in warning
+
+
+def test_nonfinite_wall_time_still_fails_before_publishing(tmp_path, monkeypatch):
+    event_reader(monkeypatch, {
+        "Train/mean_reward": [SimpleNamespace(step=0, wall_time=float("nan"), value=1.0)]
+    })
+    output = tmp_path / "metrics.json"
+    with pytest.raises(ValueError, match="non-finite wall time"):
+        colab.collect_metrics(run_events(tmp_path), output)
+    assert not output.exists()
+
+
 @pytest.mark.parametrize("has_events", [False, True])
 def test_missing_events_or_empty_scalar_samples_fail_before_publishing(
     tmp_path, monkeypatch, has_events
@@ -102,7 +144,11 @@ def test_missing_events_or_empty_scalar_samples_fail_before_publishing(
 ])
 def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch, tags, expected):
     event_reader(monkeypatch, {
-        tag: [SimpleNamespace(step=4, wall_time=2, value=7.0)] for tag in tags
+        **{tag: [SimpleNamespace(step=3, wall_time=1, value=float("nan")),
+                 SimpleNamespace(step=4, wall_time=2, value=7.0),
+                 SimpleNamespace(step=5, wall_time=3, value=float("inf")),
+                 SimpleNamespace(step=6, wall_time=4, value=-float("inf"))] for tag in tags},
+        "Curriculum/unavailable": [SimpleNamespace(step=4, wall_time=2, value=float("nan"))],
     })
     axes = []
 
@@ -147,7 +193,9 @@ def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch, t
     result = colab.collect_metrics(run_events(tmp_path), output, plot=image)
     assert backends == ["Agg"]
     assert image.is_file()
-    assert axes[0].points == ([4], [7.0])
+    assert axes[0].points[0] == [3, 4, 5, 6]
+    assert axes[0].points[1][1] == 7.0
+    assert all(math.isnan(axes[0].points[1][index]) for index in [0, 2, 3])
     assert axes[0].labels["xlabel"] == "Training iteration"
     assert axes[0].labels["ylabel"]
     assert closed == [figure]

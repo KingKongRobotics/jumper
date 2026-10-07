@@ -1,4 +1,4 @@
-<!-- tracks: COLAB.md @ sha256:31c1048b10581ac0 -->
+<!-- tracks: COLAB.md @ sha256:aba33a8f09a3820d -->
 
 # 在 Google Colab 中运行 Jumper
 
@@ -88,7 +88,9 @@ Python、CUDA 设备不可用或驱动与后端不兼容时，安装和检查应
 主训练完成后，曲线单元读取这一次运行的 TensorBoard 事件，把完整标量历史
 导出到 `metrics.json` 和 `metrics.csv`，并内嵌显示 `training-curves.png`，
 展示最多六条选定曲线。PNG 是摘要，JSON 和 CSV 保留全部已记录的标量标签与
-采样。判断策略进展时，应结合奖励、episode 长度和 loss 曲线。
+采样。非有限值在 JSON 和 CSV 中保留为明确的 `NaN`、`Infinity` 或
+`-Infinity` 字符串，并显示警告计数；曲线在这些位置留空，不填造数值。
+判断策略进展时，应结合奖励、episode 长度和 loss 曲线。
 
 ## 录制回放视频
 
