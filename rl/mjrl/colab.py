@@ -111,16 +111,34 @@ def complete_checkpoint(path: Path) -> bool:
         return False
 
 
+def _valid_checkpoints(run: Path) -> list[tuple[int, Path]]:
+    """Ignore interrupted saves and, when provenance exists, unrecorded/replaced files."""
+    run = Path(run)
+    manifest = run / MANIFEST
+    recorded = None
+    if manifest.is_file():
+        saved = json.loads(manifest.read_text(encoding="utf-8"))
+        recorded = saved.get("checkpoints", {})
+        if saved.get("schema") != SCHEMA or not isinstance(recorded, dict):
+            raise ValueError("unsupported checkpoint manifest")
+    candidates = []
+    for path in run.iterdir():
+        match = CHECKPOINT.fullmatch(path.name)
+        if (match is None or not path.is_file() or path.is_symlink()
+                or not complete_checkpoint(path)):
+            continue
+        if recorded is not None and recorded.get(path.name) != sha256(path):
+            continue
+        candidates.append((int(match[1]), path))
+    return candidates
+
+
 def latest_checkpoint(run: Path) -> Path:
-    """Choose within one explicitly selected run, never across task logs."""
-    candidates = [(int(match[1]), path) for path in Path(run).iterdir()
-                  if path.is_file() and (match := CHECKPOINT.fullmatch(path.name))]
+    """Choose the latest complete recorded save inside the explicitly selected run."""
+    candidates = _valid_checkpoints(run)
     if not candidates:
-        raise FileNotFoundError(f"no model_<iteration>.pt in this run: {run}")
-    checkpoint = max(candidates, key=lambda pair: pair[0])[1]
-    if not complete_checkpoint(checkpoint):
-        raise ValueError(f"checkpoint is incomplete: {checkpoint}")
-    return checkpoint
+        raise ValueError(f"no complete matching model_<iteration>.pt in this run: {run}")
+    return max(candidates, key=lambda pair: pair[0])[1]
 
 
 def validate_resume(checkpoint: Path, config: dict) -> dict:
@@ -189,6 +207,7 @@ def run_training(command: list[str], *, repo: Path, manifest_path: Path, config:
     stable: dict[Path, tuple[int, int]] = {}
     lines: queue.Queue[str] = queue.Queue()
     process = None
+    reader = None
 
     def record(force: bool = False) -> None:
         if run is None:
@@ -274,21 +293,59 @@ def run_training(command: list[str], *, repo: Path, manifest_path: Path, config:
                         error=f"{type(exc).__name__}: {exc}")
         raise
     finally:
-        if process is not None and process.poll() is None:
-            process.terminate()
+        # KeyboardInterrupt must remain the original error even if Drive disconnects
+        # during the final copy. Complete saves not yet polled still deserve a backup.
+        unwinding = sys.exc_info()[0] is not None
+        cleanup_errors: list[BaseException] = []
+
+        def cleanup(label, action) -> None:
             try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+                action()
+            except BaseException as cleanup_error:  # noqa: BLE001 -- retain the original interruption
+                cleanup_errors.append(cleanup_error)
+                manifest["cleanup_errors"] = [
+                    f"{type(e).__name__}: {e}" for e in cleanup_errors
+                ]
+                if not unwinding:
+                    manifest.update(status="failed", error=manifest["cleanup_errors"][0])
+                print(f"[colab] cleanup {label}: {cleanup_error}", file=sys.stderr, flush=True)
+
+        def stop_process() -> None:
+            if process is not None and process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
+        cleanup("stop training", stop_process)
+        if reader is not None:
+            cleanup("join output reader", lambda: reader.join(timeout=1))
+        if run is None:
+            # An interruption can arrive after stdout was read but before its run
+            # announcement was consumed. Discover it without replacing the end status.
+            end_status = manifest["status"]
+            while not lines.empty():
+                cleanup("pending output", lambda: consume(lines.get_nowait()))
+            manifest["status"] = end_status
+        cleanup("final checkpoint scan", lambda: record(force=True))
+        if cleanup_errors:
+            manifest["cleanup_errors"] = [f"{type(e).__name__}: {e}" for e in cleanup_errors]
+            if not unwinding:
+                manifest.update(status="failed", error=manifest["cleanup_errors"][0])
         if process is not None and process.stdout is not None:
-            process.stdout.close()
-        atomic_json(manifest_path, manifest)
+            cleanup("close output", process.stdout.close)
+        cleanup("operation manifest", lambda: atomic_json(manifest_path, manifest))
         if run is not None:
-            atomic_json(run / MANIFEST, manifest)
+            cleanup("run manifest", lambda: atomic_json(run / MANIFEST, manifest))
             if drive_root is not None:
-                drive_root.mkdir(parents=True, exist_ok=True)
-                atomic_json(drive_root / f"{operation}.json", manifest)
+                cleanup("Drive directory", lambda: drive_root.mkdir(parents=True, exist_ok=True))
+                cleanup("Drive manifest", lambda: atomic_json(
+                    drive_root / f"{operation}.json", manifest
+                ))
+        if cleanup_errors and not unwinding:
+            raise cleanup_errors[0]
     return manifest
 
 
@@ -299,6 +356,7 @@ def create_backup(run: Path, output: Path, *, export: Path | None = None,
     if not (run / MANIFEST).is_file():
         raise ValueError("backup needs a Colab run manifest")
     latest_checkpoint(run)
+    valid = {path.name: sha256(path) for _, path in _valid_checkpoints(run)}
     if output.exists():
         raise FileExistsError(f"backup already exists: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -321,6 +379,11 @@ def create_backup(run: Path, output: Path, *, export: Path | None = None,
                     if path.is_symlink():
                         raise ValueError(f"backup refuses symlinks: {path}")
                     if path.is_file():
+                        if path.suffix == ".pt" and (
+                            path.name not in valid or not complete_checkpoint(path)
+                            or sha256(path) != valid[path.name]
+                        ):
+                            continue
                         relative = path.relative_to(source) if source.is_dir() else Path(path.name)
                         archive.write(path, (PurePosixPath(prefix) / relative.as_posix()).as_posix())
         # Exclusive publication also refuses another backup written concurrently.

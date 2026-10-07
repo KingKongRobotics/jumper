@@ -76,8 +76,7 @@ def test_latest_checkpoint_is_numeric_and_confined_to_one_run(tmp_path):
     checkpoint(tmp_path / "unrelated/model_9999.pt")
     assert colab.latest_checkpoint(tmp_path / "chosen").name == "model_100.pt"
     (tmp_path / "chosen/model_101.pt").write_bytes(b"partially written")
-    with pytest.raises(ValueError, match="incomplete"):
-        colab.latest_checkpoint(tmp_path / "chosen")
+    assert colab.latest_checkpoint(tmp_path / "chosen").name == "model_100.pt"
 
 
 def test_persistence_publishes_checkpoint_and_manifest_together(tmp_path, monkeypatch):
@@ -118,6 +117,89 @@ def test_backup_round_trip_preserves_checkpoint_export_and_existing_destination(
     with pytest.raises(FileExistsError):
         colab.create_backup(model.parent, archive)
     assert archive.read_bytes() == before
+
+
+def test_interrupted_backup_skips_partial_unrecorded_and_replaced_highest_saves(tmp_path):
+    """An interrupted last save must not make the preceding complete save undownloadable."""
+    model = saved_run(tmp_path / "run")
+    partial = model.parent / "model_11.pt"
+    partial.write_bytes(b"interrupted torch.save")
+    checkpoint(model.parent / "model_12.pt", "complete but never recorded")
+    replaced = model.parent / "model_13.pt"
+    checkpoint(replaced, "original")
+    manifest = json.loads((model.parent / colab.MANIFEST).read_text())
+    manifest["checkpoints"][replaced.name] = colab.sha256(replaced)
+    checkpoint(replaced, "replaced")
+    colab.atomic_json(model.parent / colab.MANIFEST, manifest)
+    assert colab.latest_checkpoint(model.parent) == model
+    archive = colab.create_backup(model.parent, tmp_path / "interrupted.zip")
+    with zipfile.ZipFile(archive) as content:
+        weights = [name for name in content.namelist() if name.endswith(".pt")]
+        assert weights == ["run/model_10.pt"]
+    restored = colab.restore_backup(archive, tmp_path / "restored-interrupted")
+    assert restored.name == "model_10.pt"
+    colab.validate_resume(restored, config())
+
+
+@pytest.mark.parametrize("drive_failure", [False, True])
+def test_interruption_records_complete_save_not_yet_polled_and_preserves_error(
+    tmp_path, monkeypatch, drive_failure
+):
+    """Interrupt immediately after a save, before the next watcher poll can see it."""
+    script = tmp_path / "fake_train.py"
+    script.write_text(textwrap.dedent('''
+        import pathlib, time, zipfile
+        run = pathlib.Path("logs/robot/robot.walk/interrupted-run")
+        run.mkdir(parents=True)
+        print("[mjrl] log directory", run, flush=True)
+        with zipfile.ZipFile(run / "model_1.pt", "w") as archive:
+            archive.writestr("model/data.pkl", "complete")
+        (run / "model_2.pt").write_bytes(b"partial")
+        pathlib.Path("saved").touch()
+        while True:
+            time.sleep(0.1)
+    '''))
+    real_queue = colab.queue.Queue
+
+    class InterruptAfterAnnouncement(real_queue):
+        reads = 0
+
+        def get(self, *args, **kwargs):
+            if self.reads:
+                deadline = time.monotonic() + 5
+                while not (tmp_path / "saved").exists():
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("fake subprocess did not finish saving")
+                    time.sleep(0.01)
+                raise KeyboardInterrupt("intentional notebook interruption")
+            line = super().get(*args, **kwargs)
+            self.reads += 1
+            return line
+
+    monkeypatch.setattr(colab.queue, "Queue", InterruptAfterAnnouncement)
+    if drive_failure:
+        def disconnected(*args, **kwargs):
+            raise OSError("Drive disconnected during cleanup")
+
+        monkeypatch.setattr(colab, "persist_checkpoint", disconnected)
+    with pytest.raises(KeyboardInterrupt, match="intentional"):
+        colab.run_training([sys.executable, str(script)], repo=tmp_path,
+                           manifest_path=tmp_path / "operation.json", config=config(),
+                           drive_root=tmp_path / "drive", poll_interval=60)
+    manifest = json.loads((tmp_path / "operation.json").read_text())
+    assert manifest["status"] == "interrupted"
+    assert manifest["error"].startswith("KeyboardInterrupt:")
+    assert set(manifest["checkpoints"]) == {"model_1.pt"}
+    run = Path(manifest["run_directory"])
+    colab.validate_resume(run / "model_1.pt", config())
+    archive = colab.create_backup(run, tmp_path / "after-interruption.zip")
+    assert colab.restore_backup(archive, tmp_path / "restored").name == "model_1.pt"
+    if drive_failure:
+        assert any("Drive disconnected" in error for error in manifest["cleanup_errors"])
+    else:
+        snapshots = list((tmp_path / "drive").glob("*/model_1-*/model_1.pt"))
+        assert len(snapshots) == 1
+        colab.validate_resume(snapshots[0], config())
 
 
 @pytest.mark.parametrize("name", [
@@ -248,3 +330,5 @@ def test_notebook_has_plain_python_cells_and_runs_repo_scripts_in_isolated_proce
     assert 'git", "reset' not in source
     assert "import torch" not in source
     assert "files.download(str(BACKUP_ZIP))" in source
+    backup_cell = next(cell for cell in code_cells if "files.download(str(BACKUP_ZIP))" in cell)
+    assert "from google.colab import files" in backup_cell
