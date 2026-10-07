@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   layout-and-translations:
-    name: Layout and translation checks
+    name: Layout, translation and Colab checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -22,10 +22,10 @@ jobs:
         with:
           python-version: "3.13"
 
-      # These checks parse repository files and validate translation stamps; they
-      # intentionally do not install or exercise the MuJoCo, Warp, or GPU stack.
+      # These checks parse files, validate translations and exercise Colab backup
+      # contracts with short-lived subprocesses. They need no MuJoCo or GPU stack.
       - name: Install test runner
         run: python -m pip install --disable-pip-version-check pytest
 
-      - name: Check layout and translations
-        run: python -m pytest tests/test_layout.py tests/test_translations.py -q
+      - name: Check layout, translations and Colab helpers
+        run: python -m pytest tests/test_layout.py tests/test_translations.py tests/test_colab.py tests/test_colab_metrics.py -q

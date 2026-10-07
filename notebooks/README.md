@@ -70,7 +70,8 @@ optional. Drive mounting was disabled in the test and has not been verified.
 The workflow ran on a Tesla T4 using source `19e8f4d`: five smoke iterations,
 500 main iterations, video replay, 500 rows of joint measurements, 51 scalar tags
 with 25,500 samples, ONNX export, ZIP backup, restore and five further iterations.
-Later notebook edits change imports, documentation and the default repository/reference.
+Later notebook edits update imports, documentation, upstream defaults and the
+export task/model check.
 
 This demonstrates the workflow for the tested task. It does not establish that
 every task works, that the walking policy has converged, or that it can run safely

@@ -464,6 +464,55 @@ def test_notebook_replay_rejects_task_or_model_changes_before_archiving_or_gpu(c
         exec(compile(notebook_cell("SIM_STEPS ="), "refuse_wrong_task", "exec"), namespace)  # noqa: S102
 
 
+@pytest.mark.parametrize("changed", [{}, {"TASK": "robot.other-gait"}, {"MODEL": "other-robot"}])
+def test_notebook_export_keeps_the_recorded_task_and_model(tmp_path, changed):
+    """Equal tensor dimensions must not let a checkpoint acquire another task's contract."""
+    session = tmp_path / "session"
+    session.mkdir()
+    artifacts = session / "artifacts"
+    artifacts.mkdir()
+    run_dir = tmp_path / "selected-run"
+    run_dir.mkdir()
+    model = run_dir / "model_20.pt"
+    model.touch()
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        output = Path(command[command.index("--out") + 1])
+        output.mkdir()
+        (output / "actor.onnx").write_bytes(b"exported actor")
+        (output / "layout.json").write_text("{}")
+
+    namespace = {
+        "SESSION": session, "ARTIFACTS": artifacts, "REPO": tmp_path,
+        "PYTHON": tmp_path / ".venv/python", "TASK": "robot.walk", "MODEL": "robot",
+        "CHECKPOINT_PATH": model, "RUN_DIR": run_dir,
+        "training": {"config": {"task": "robot.walk", "model": "robot"}},
+        "run": run, "json": json, "uuid": __import__("uuid"),
+        "EXPORT_SUCCESS": True, "EXPORTED_CHECKPOINT": "earlier-checkpoint",
+        **changed,
+    }
+    source = compile(notebook_cell("EXPORT_DIR = SESSION"), "export_selected_policy", "exec")
+    if changed:
+        with pytest.raises(ValueError, match="different task/model"):
+            exec(source, namespace)  # noqa: S102
+        assert commands == [] and "EXPORT_DIR" not in namespace
+        assert not namespace["EXPORT_SUCCESS"] and namespace["EXPORTED_CHECKPOINT"] == ""
+        assert list(artifacts.iterdir()) == []
+    else:
+        # The matching control must reach export and associate the contract with this checkpoint.
+        exec(source, namespace)  # noqa: S102
+        assert len(commands) == 1
+        command = commands[0]
+        assert command[command.index("--task") + 1] == "robot.walk"
+        assert command[command.index("--model") + 1] == "robot"
+        assert command[command.index("--checkpoint") + 1] == model
+        assert namespace["EXPORT_SUCCESS"] and namespace["EXPORTED_CHECKPOINT"] == str(model)
+        saved = json.loads((artifacts / "export-settings.json").read_text())
+        assert saved["checkpoint"] == str(model) and saved["run"] == str(run_dir)
+
+
 @pytest.mark.parametrize("matching", [False, True])
 def test_notebook_backup_refuses_stale_video_and_export_without_blocking_checkpoints(
     tmp_path, monkeypatch, matching

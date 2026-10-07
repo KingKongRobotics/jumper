@@ -209,6 +209,8 @@ new run. See [Usage](USAGE.md) and [agent setup](AGENT_SETUP.md) for diagnostics
 
 ## Export and download
 
+Before export, the notebook checks that `TASK` and `MODEL` match the selected
+checkpoint's training record. Equal tensor dimensions are not enough.
 The export cell writes an ONNX actor and its `layout.json` contract, README and
 checkpoint copy. Keep that directory together: the contract carries observation
 and action ordering, scales, gains and other information a consumer needs.
@@ -236,7 +238,7 @@ Tesla T4, with Python 3.13, PyTorch 2.9.1+cu126, MuJoCo 3.11 and Warp 1.18.
 These results cover the tested branch's core code, rather than guaranteeing every
 future Colab image or GPU allocation:
 
-The current source (`19e8f4d`) completed the default 500-iteration T4 run, including
+The tested source (`19e8f4d`) completed the default 500-iteration T4 run, including
 joint telemetry, scalar exports and per-run artifact packaging. The confirmed
 workflow and regression results are recorded below.
 
