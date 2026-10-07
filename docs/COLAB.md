@@ -171,13 +171,13 @@ future Colab image or GPU allocation:
 
 | Check | Observed result |
 |---|---|
-| Focused tests | 53 passed. |
+| Focused tests | 76 passed: 57 Colab/video checks and 19 translation checks. |
 | GPU training smoke | Five PPO iterations with 256 `jumper.tripod` environments completed. |
 | Training and restore | A 20-iteration run completed; its checkpoint snapshot and manifest were backed up, restored into a fresh local destination, and used for five additional iterations. |
 | ONNX export | The 411-input, 20-output actor passed comparison with a maximum absolute error of `3.58e-7`. |
 | Supplied dance recording | A 500-step MP4 was generated with NVIDIA EGL on the actual T4 GPU and verified by local decoding and cloud `ffprobe`. |
 | Trained-policy recording | A 500-step MP4 of the newly trained policy was generated with NVIDIA EGL on the actual T4 GPU and passed the same video checks. |
-| Complete test suite | A new sequential run is pending; no final full-suite result is claimed here. |
+| Complete test suite | The sequential run finished with 1067 passed, 25 skipped, 3 failed and 140 warnings in 239.48 seconds. |
 | Google Drive mounting | Disabled in this session and not tested. |
 
 The graphics check used NVIDIA EGL rather than Mesa software rendering. The setup
@@ -188,7 +188,24 @@ Both recordings contain 301 H.264 frames at 640 x 480 and 30 fps, with a duratio
 of 10.033333 seconds. This includes the initial frame as well as frames sampled
 during the ten-second simulation.
 
+The full suite is not clean. Its three failures are in existing tests outside the
+Colab/video changes: posture mirror geometry, agreement on the native backend's
+automatic thread count, and TensorBoard port selection with a lingering `TIME_WAIT`
+socket. The relevant core code and tests were not changed. All three failures were
+reproduced on the upstream baseline in the same Colab environment. The thread-count
+failure was reproduced in order with
+`test_five_foot.py::test_the_operator_actually_closes_the_claw` followed by
+`test_resolve.py::test_backend_and_resolve_agree_on_the_default`: the resolver
+reported two threads where the test expected eight. This records the sequence
+dependence rather than diagnosing its underlying cause. The 25 skips are not passes.
+
+Ruff 0.16.10 reported 346 findings across the repository, compared with 350 on the
+upstream baseline; comparison found no added findings. On the changed Python files
+it reported only the existing `EXE001` finding for `scripts/play.py`; that file's
+shebang and executable mode were unchanged. This is not a claim that the
+repository-wide lint check passes.
+
 These short runs establish that the tested training, checkpoint, restore and
 export paths work. They do not establish policy convergence, a robust gait or
-real-robot behavior. The complete-suite result remains explicitly pending, and
-Drive mounting needs its own acceptance run.
+real-robot behavior. The full-suite failures remain known limitations of this
+validation, and Google Drive mounting was not tested.
