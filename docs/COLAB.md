@@ -47,8 +47,10 @@ under `/content`, defaulting to `jumper`. Existing checkouts are reused only whe
 origin and commit match; switching sources needs a new folder or runtime.
 
 The backup's commit must exist in the selected repository. For the original
-`19e8f4d` backup, use `tianrking/jumper`: an upstream squash merge may not retain
-that commit. Core versions are read from the backup, without manual copying.
+`19e8f4d` backup, open the [notebook from that commit](https://colab.research.google.com/github/tianrking/jumper/blob/19e8f4d54751bccf34c5a336d46b5b8d27afe8f7/notebooks/jumper_colab.ipynb)
+and use `tianrking/jumper`: an upstream squash merge may not retain that commit.
+The current notebook requires the newer workflow interface and refuses the old
+source. For current backups, core versions are read without manual copying.
 Manual overrides accept exact versions of `torch`, `mujoco`, `mujoco-warp`,
 `warp-lang`, `numpy` and `tensordict`, not URLs, ranges or pip arguments. The
 supported Torch/torchvision pair is 2.9.1/0.24.1; other pairs need validation.
@@ -93,7 +95,8 @@ does not change control speed; control and physics rates follow the task.
 
 `SIM_COMMAND` selects sampled commands, forward, sideways, turn, stand or custom
 body-frame velocity. Fixed commands must lie within the saved training ranges.
-Checkpoint command ranges use the saved curriculum level instead of a later one;
+Notebook replay and evaluation match the saved curriculum command ranges by
+default, using the checkpoint's level instead of a later one;
 the replay records resolved ranges, source and simulation rates. Command controls
 apply to velocity tasks; unsupported tasks are refused.
 
@@ -192,10 +195,23 @@ real-robot behavior. The two batch failures, the single-process interruption and
 the baseline sequence dependence limit the regression evidence. Google Drive
 mounting was not tested.
 
-## Later workflow changes
+## Updated workflow acceptance
 
-The basic/advanced forms, early backup settings, retained restore selection,
-curriculum summary and fixed-command evaluation were added after the `19e8f4d`
-GPU run above. Their new Colab end-to-end validation is pending and is not implied
-by the historical record. Local checks and new GPU receipts will be recorded here
-when completed. Drive mounting remains untested.
+The reorganized workflow was tested separately on a real Tesla T4. Runtime source
+was `9865160`; the continuation notebook was `243a33e`. The original 500-iteration
+video above remains the `19e8f4d` result, not a video of this later short run.
+
+| Check | Observed result |
+|---|---|
+| New training | Five smoke iterations and 25 main iterations with 64 `jumper.tripod` environments completed, producing `model_24.pt`. |
+| ZIP continuation | Real backup bytes supplied at the `files.upload` boundary populated the task, environment count, source and six core versions. Rerunning basic and advanced forms retained the selected checkpoint. Five further updates produced `model_28.pt`. |
+| Replay and evaluation | Fresh and continued checkpoints each produced a two-second replay and forward, sideways, turn and stand JSON reports. All cases matched checkpoint curriculum level 0. Each replay had 100 control steps and 61 H.264 frames at 640 x 480, 30 fps, including the initial frame. |
+| ONNX | Fresh and continued actors passed comparison, with maximum absolute errors of `4.77e-7` and `3.58e-7`. |
+| Continued backup | The 23,247,110-byte ZIP passed local CRC and SHA-256 checks and contains `model_28.pt`, curves, replay, evaluation reports and export. |
+| Real interruption | A 2000-iteration-budget run received SIGINT after `model_0.pt` was completely saved. Its manifest recorded `interrupted`; backup/restore followed by two additional updates finished and saved `model_1.pt`. |
+| Focused regression | 253 checks passed with 54 warnings in 74.77 seconds at test source `d5bc9e9`, including all 43 replay tests, 18 native parity tests and a real Torch fixed-command sampler/reset check. |
+
+The ZIP upload test exercised real bytes through the notebook's upload boundary;
+it did not exercise the browser file picker. Drive mounting remains untested.
+The fixed-command reports verify execution and expose tracking error; neither a
+short run nor the curriculum level establishes policy convergence or robot safety.

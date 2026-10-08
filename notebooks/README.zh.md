@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:0ae3f849ff213d6c -->
+<!-- tracks: README.md @ sha256:c173525c258db1c8 -->
 
 # 在 Colab 上运行 Jumper
 
@@ -29,7 +29,7 @@
 | 训练或续训 | 检查点、配置和日志。 |
 | 查看进展 | 完整标量 JSON/CSV、曲线，以及任务提供的课程等级、跟踪误差和命令范围。 |
 | 回放 | 内嵌 MP4；无需重训即可改时长、帧率、尺寸、场景和摄像机。可选关节位置、速度、力矩、足端力 CSV/PNG。 |
-| 评估速度策略 | 固定前进、侧移、转向和站立命令，可选检查点的课程范围，输出 JSON 报告。 |
+| 评估速度策略 | 固定前进、侧移、转向和站立命令，匹配检查点的课程范围，输出 JSON 报告。 |
 | 导出 | ONNX actor、`layout.json`、README 和检查点副本，保存到新目录。 |
 | 备份 | 完整检查点和已有产物的 ZIP。曲线、回放或导出失败时，仍能备份检查点。 |
 
@@ -48,8 +48,10 @@
 https://github.com/user-attachments/assets/e0e3b700-d1f6-486f-be20-98d4b69639ea
 
 该会话完成了训练、视频与关节记录、标量导出、ONNX、ZIP 备份、恢复和再训练五次。
-ZIP 约 116 MiB。恢复这份旧备份时，记录的 `19e8f4d` 提交仍在 `tianrking/jumper`；
-上游压缩合并可能不保留它。
+ZIP 约 116 MiB。恢复这份旧备份时，打开[该提交的 Notebook](https://colab.research.google.com/github/tianrking/jumper/blob/19e8f4d54751bccf34c5a336d46b5b8d27afe8f7/notebooks/jumper_colab.ipynb)，
+使用 `tianrking/jumper` 中记录的 `19e8f4d` 源码。当前 Notebook 需要新版流程接口，
+会拒绝这份旧源码。
 
-表单重排、提前读取备份设置和固定命令评估是后续改动；新版 Colab 验证另行记录在
-[完整指南](../docs/COLAB.zh.md#验证边界)中。
+新版的新训练和续训路径也已在真实 T4 上通过，包括 ZIP 设置、保留检查点选择、四种固定
+命令评估和导出。另一次真实 SIGINT 中断已完成备份、恢复和再训练，详见
+[完整指南](../docs/COLAB.zh.md#验证边界)。

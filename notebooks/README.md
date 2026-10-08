@@ -31,7 +31,7 @@ and separate from your training run.
 | Train or resume | Checkpoints, configuration and logs. |
 | Inspect progress | Full scalar JSON/CSV, plots and available curriculum levels, tracking error and command ranges. |
 | Replay | Inline MP4; change duration, FPS, size, scene and camera without retraining. Optional joint position, velocity, torque and foot-force CSV/PNG. |
-| Evaluate a velocity policy | Fixed forward, sideways, turn and stand commands, with an optional checkpoint curriculum range and a JSON report. |
+| Evaluate a velocity policy | Fixed forward, sideways, turn and stand commands matched to the checkpoint's curriculum range, with a JSON report. |
 | Export | ONNX actor, `layout.json`, README and checkpoint copy in a new folder. |
 | Keep a backup | ZIP of complete checkpoints and available outputs. A failed plot, replay or export does not prevent checkpoint backup. |
 
@@ -55,9 +55,11 @@ https://github.com/user-attachments/assets/e0e3b700-d1f6-486f-be20-98d4b69639ea
 
 That session completed training, video and joint recording, scalar export, ONNX,
 ZIP backup, restore and five further iterations. Its ZIP was about 116 MiB. To
-restore this older backup, its recorded `19e8f4d` commit remains in
-`tianrking/jumper`; a squash merge may not retain it upstream.
+restore this older backup, open the [notebook from that commit](https://colab.research.google.com/github/tianrking/jumper/blob/19e8f4d54751bccf34c5a336d46b5b8d27afe8f7/notebooks/jumper_colab.ipynb)
+and use its recorded `19e8f4d` source in `tianrking/jumper`. The current notebook
+requires the newer workflow interface and refuses that older source.
 
-The reorganized forms, early backup setup and fixed-command evaluation are later
-changes; their Colab acceptance is recorded separately in the
-[full guide](../docs/COLAB.md#validation-boundary).
+The updated new-training and continuation routes also passed on a real T4,
+including ZIP settings, retained checkpoint selection, four fixed-command cases
+and exports. A separate real SIGINT interruption was backed up, restored and
+trained further; details are in the [full guide](../docs/COLAB.md#validation-boundary).
