@@ -731,11 +731,54 @@ runs differed in collection time by a factor of two. The policy learning on MPS 
 the 4096 row: with it on the CPU, learning took 6.7 s of a 40.8 s iteration and collection the
 rest, which says the CPU side was contended, not that the GPU was.
 
-**What has not been verified**: whether a policy trained here matches one from CUDA. §9.3's
-single-step residual was measured between native and warp; nothing has been measured between
-warp-on-Metal and warp-on-CUDA, and the same-seed training comparison §9.3 asks for is the one
-that would settle both. Until then a Metal checkpoint is reported as a Metal checkpoint, which
-is what the banner's `sim=` and the resolution's note are for.
+**The physics agrees with mjwarp's own CPU reference.** §9.3's measurement, repeated with three
+engines from one state -- eight worlds on a plane, dropped 5 cm with a seeded random `ctrl`, so
+the first 100 steps are free fall and the last 100 are landing (6 contacts, `qacc` 29 at step
+200). Maximum base-pose difference, M3 Max, 2026-10-08:
+
+| after | metal vs native | warp:cpu vs native | metal vs warp:cpu |
+|---|---|---|---|
+| `forward()`, `xpos` | 8.2e-07 | 7.8e-07 | 4.8e-07 |
+| 1 step (free fall) | 5.8e-09 | 5.8e-09 | **9.8e-13** |
+| 50 steps (free fall) | 1.4e-08 | 1.4e-08 | 1.2e-09 |
+| 200 steps (in contact) | 4.3e-04 | 4.3e-04 | **8.8e-06** |
+
+The third column is the control: the same kernels on two devices. In free fall they agree to
+float32 round-off; after landing they are 8.8e-6 apart, two orders of magnitude inside the
+4.3e-4 that separates either of them from native -- which is §9.3's residual (4–6e-4, float64
+against float32 in contact), unchanged by the device. So the Metal device computes what mjwarp
+computes, and whatever a policy trained here inherits from the simulator, it inherits from
+mjwarp rather than from Metal. The first attempt at this probe measured nothing: the bare
+`jumper.xml` has no floor (the scene adds it), the robot fell through, and `ncon` stayed 0 --
+the residuals were free fall all the way down. The plane, `ncon` and `qacc` are in the table
+because of that.
+
+**And the learning curves agree.** The same-seed comparison §9.3 asks for, between native and
+Metal: `jumper.tripod`, 64 environments, seed 42, 300 iterations each, the shipped
+hyper-parameters (which are the GPU recipe, so neither run is a good policy -- the point is that
+they are the same not-yet-good policy). M3 Max, 2026-10-08, native / Metal:
+
+| iteration | 50 | 100 | 150 | 200 | 299 (last 10 mean) |
+|---|---|---|---|---|---|
+| `Train/mean_reward` | -35.1 / -32.8 | -44.1 / -43.0 | -29.5 / -30.2 | -18.7 / -21.5 | -10.2 / -11.1 |
+| `Train/mean_episode_length` | 628 / 599 | 982 / 995 | 1000 / 1000 | 1000 / 1000 | 1000 / 1000 |
+| `Episode_Reward/track_linear_velocity` | 0.23 / 0.32 | 0.33 / 0.28 | 0.26 / 0.22 | 0.27 / 0.42 | 0.27 / 0.29 |
+| `Policy/mean_std` | 0.932 / 0.931 | 0.873 / 0.874 | 0.824 / 0.828 | 0.787 / 0.791 | 0.746 / 0.751 |
+
+Point-wise agreement was never the criterion (§9.3: a hexapod's contacts amplify any
+difference exponentially, and after 200 steps the two simulators are 4e-4 apart), and the
+per-iteration numbers do scatter -- the tracking term by up to 0.15 at one mark. The curves do
+not: the reward dips and recovers at the same iterations, both runs reach full-length episodes
+by iteration 150 with no falls, and the policy's noise decays along one line to three decimals.
+Whatever separates a native policy from a Metal one at 300 iterations is inside what separates
+two iterations of the same run. The run's own `Perf/` numbers are not quoted: the Metal run
+shared the machine with the residual probes above, which compile kernels for minutes, and its
+throughput reads 190 env-steps/s against the 1200 measured alone (§1.6 of `AGENT_SETUP.md`).
+
+**What has not been verified**: Metal against CUDA directly -- no CUDA machine was at hand --
+and anything past 300 iterations at 64 environments, which is where the GPU recipe would
+start to matter. A Metal checkpoint is still reported as a Metal checkpoint, which is what the
+banner's `sim=` and the resolution's note are for.
 
 ## 10. Collision geometry
 
