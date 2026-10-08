@@ -15,6 +15,7 @@ from mjlab.entity.variants import VARIANT_DEPENDENT_FIELDS, build_variant_model
 from mjlab.managers.event_manager import RecomputeLevel
 from mjlab.sim.randomization import expand_model_fields
 from mjlab.sim.sim_data import TorchArray, WarpBridge
+from mjlab.utils.sim_device import sim_device, synchronize  # [mjrl] see utils/sim_device.py
 from mjlab.utils.nan_guard import NanGuard, NanGuardCfg
 
 if TYPE_CHECKING:
@@ -230,7 +231,13 @@ class Simulation:
   ):
     self.cfg = cfg
     self.device = device
-    self.wp_device = wp.get_device(self.device)
+    # [mjrl] reason: the Warp device may differ from the torch one -- Metal
+    # simulating for "cpu" tensors (against mjlab 1.6.0; see utils/sim_device.py).
+    self.wp_device = wp.get_device(sim_device(self.device))
+    # [mjrl] reason: Metal graphs cannot evaluate a loop condition, so the
+    # solver runs its fixed iteration count there (mjwarp's graph_conditional
+    # is a CUDA conditional node). Measured: without this the capture fails.
+    self._fixed_solver_iterations = getattr(self.wp_device, "is_metal", False)
     self.num_envs = num_envs
     self._default_model_fields: dict[str, torch.Tensor] = {}
     # Fields whose DR baseline is per-world (DR's `_select_default_values`
@@ -324,6 +331,8 @@ class Simulation:
 
   def _finish_init(self) -> None:
     """Common initialization after warp model is created."""
+    if self._fixed_solver_iterations:  # [mjrl] see __init__
+      self._wp_model.opt.graph_conditional = False
     self._wp_data = mjwarp.put_data(
       self._mj_model,
       self._mj_data,
@@ -488,6 +497,7 @@ class Simulation:
         wp.capture_launch(self.forward_graph)
       else:
         mjwarp.forward(self.wp_model, self.wp_data)
+    synchronize(self.wp_device)  # [mjrl] Metal: CPU tensors alias its memory
 
   def step(self) -> None:
     with wp.ScopedDevice(self.wp_device):
@@ -496,6 +506,7 @@ class Simulation:
           wp.capture_launch(self.step_graph)
         else:
           mjwarp.step(self.wp_model, self.wp_data)
+    synchronize(self.wp_device)  # [mjrl] Metal: CPU tensors alias its memory
 
   def reset(self, env_ids: torch.Tensor | None = None) -> None:
     with wp.ScopedDevice(self.wp_device):
@@ -509,6 +520,7 @@ class Simulation:
         wp.capture_launch(self.reset_graph)
       else:
         mjwarp.reset_data(self.wp_model, self.wp_data, reset=self._reset_mask_wp)
+    synchronize(self.wp_device)  # [mjrl] Metal: CPU tensors alias its memory
 
   def set_sensor_context(self, ctx: SensorContext) -> None:
     """Wire a SensorContext for camera/raycast sensing.
@@ -537,6 +549,7 @@ class Simulation:
         wp.capture_launch(self.sense_graph)
       else:
         self._sense_kernel()
+    synchronize(self.wp_device)  # [mjrl] Metal: CPU tensors alias its memory
 
     ctx.finalize()
 
@@ -559,6 +572,10 @@ class Simulation:
 
   def _should_use_cuda_graph(self) -> bool:
     """Determine if CUDA graphs can be used based on device and driver version."""
+    if getattr(self.wp_device, "is_metal", False):
+      # [mjrl] reason: warp-metal records and replays dispatches natively, with
+      # no driver version to check (against mjlab 1.6.0).
+      return True
     if not self.wp_device.is_cuda:
       return False
 

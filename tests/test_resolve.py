@@ -28,11 +28,20 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """External environment variables change the result, so they are cleared."""
     monkeypatch.delenv("MJRL_BACKEND", raising=False)
     monkeypatch.delenv("MJRL_DEVICE", raising=False)
+    monkeypatch.delenv("MJRL_SIM_DEVICE", raising=False)
+    monkeypatch.delenv("MJRL_AGENT_DEVICE", raising=False)
 
 
-def _stub_probes(monkeypatch: pytest.MonkeyPatch, *, gpu: bool) -> None:
+def _stub_probes(
+    monkeypatch: pytest.MonkeyPatch, *, gpu: bool, metal: bool = False, mps: bool = False
+) -> None:
     for name in ("_mujoco_warp_importable", "_torch_cuda", "_warp_sees_cuda"):
         monkeypatch.setattr(resolve_mod, name, lambda gpu=gpu: gpu)
+    if metal:
+        # mujoco_warp is importable on a Mac with the extra, with no CUDA.
+        monkeypatch.setattr(resolve_mod, "_mujoco_warp_importable", lambda: True)
+    monkeypatch.setattr(resolve_mod, "_warp_sees_metal", lambda: metal)
+    monkeypatch.setattr(resolve_mod, "_torch_mps", lambda: mps)
 
 
 # ── No fallback ───────────────────────────────────────────────────────────
@@ -82,6 +91,81 @@ def test_auto_picks_warp_with_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
     r = resolve()
     assert (r.backend, r.device) == ("warp", "cuda:0")
     assert r.num_envs == 4096
+    # Everywhere but Apple Silicon the three devices are one.
+    assert (r.sim_device, r.agent_device) == ("cuda:0", "cuda:0")
+    assert "sim=" not in r.banner() and "agent=" not in r.banner()
+
+
+# ── Apple Silicon: the torch device and the Warp device part ways ─────────
+
+
+def test_auto_picks_warp_on_metal_with_the_tensors_on_cpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With warp-metal installed and no CUDA, auto is warp with torch's "cpu"
+    and the simulation on metal:0 -- and the banner says so, because a run
+    that quietly uses the GPU is as misleading as one that quietly does not.
+    The policy learns on MPS when torch has it.
+    """
+    _stub_probes(monkeypatch, gpu=False, metal=True, mps=True)
+    r = resolve()
+    assert (r.backend, r.device, r.sim_device, r.agent_device) == (
+        "warp", "cpu", "metal:0", "mps"
+    )
+    assert r.num_envs == 4096, "a GPU batch, not native's 64"
+    assert "sim=metal:0" in r.banner() and "agent=mps" in r.banner()
+    assert not any("serial debugging path" in n for n in r.notes), (
+        "warp on cpu is only the debugging path when the simulation is on cpu"
+    )
+    assert any("warp-metal" in n for n in r.notes)
+
+    # The control: the same machine without MPS keeps the policy on the CPU.
+    _stub_probes(monkeypatch, gpu=False, metal=True, mps=False)
+    assert resolve().agent_device == "cpu"
+
+
+def test_without_metal_warp_on_cpu_is_still_the_debugging_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_probes(monkeypatch, gpu=False, metal=False)
+    monkeypatch.setattr(resolve_mod, "_mujoco_warp_importable", lambda: True)
+    r = resolve(backend="warp", device="cpu")
+    assert (r.sim_device, r.agent_device) == ("cpu", "cpu")
+    assert any("serial debugging path" in n for n in r.notes)
+
+
+def test_a_metal_torch_device_is_refused_rather_than_fixed_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """torch has no Metal device. `--device metal:0` is what somebody will type
+    first; mapping it to cpu would be a fallback that happens to work."""
+    _stub_probes(monkeypatch, gpu=False, metal=True)
+    with pytest.raises(BackendUnavailable, match="not a torch device"):
+        resolve(backend="warp", device="metal:0")
+
+
+def test_sim_device_env_keeps_the_simulation_off_the_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MJRL_SIM_DEVICE=cpu on a Metal machine is warp's serial cpu path, asked
+    for -- and asking for metal where Warp lists none is an error, not cpu."""
+    _stub_probes(monkeypatch, gpu=False, metal=True, mps=True)
+    monkeypatch.setenv("MJRL_SIM_DEVICE", "cpu")
+    r = resolve(backend="warp", device="cpu")
+    assert (r.sim_device, r.agent_device) == ("cpu", "cpu")
+    assert any("serial debugging path" in n for n in r.notes)
+
+    _stub_probes(monkeypatch, gpu=False, metal=False)
+    monkeypatch.setattr(resolve_mod, "_mujoco_warp_importable", lambda: True)
+    monkeypatch.setenv("MJRL_SIM_DEVICE", "metal:0")
+    with pytest.raises(BackendUnavailable, match="no Metal device"):
+        resolve(backend="warp", device="cpu")
+
+
+def test_agent_device_env_overrides_mps(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_probes(monkeypatch, gpu=False, metal=True, mps=True)
+    monkeypatch.setenv("MJRL_AGENT_DEVICE", "cpu")
+    assert resolve().agent_device == "cpu"
 
 
 # ── Precedence: command line > environment ────────────────────────────────

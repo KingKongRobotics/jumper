@@ -36,7 +36,9 @@ class TorchArray:
       new_shape = (nworld,) + self._tensor.shape[1:]
       self._tensor = self._tensor.expand(new_shape)
 
-    self._is_cuda = not self._wp_array.device.is_cpu  # type: ignore
+    # [mjrl] reason: `not is_cpu` took a Metal array for a CUDA one and built a
+    # torch.cuda.Stream for it; the stream bridge is CUDA's (against mjlab 1.6.0).
+    self._is_cuda = self._wp_array.device.is_cuda  # type: ignore
     self._torch_stream = self._setup_stream()
 
   def _setup_stream(self) -> Optional[torch.cuda.Stream]:

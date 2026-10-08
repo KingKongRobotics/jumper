@@ -699,6 +699,44 @@ equivalent to one from `warp`.**
 See §6.3. Depth and segmentation are aligned closely enough to be used as references for one
 another; RGB with textures enabled is not.
 
+### 9.5 The Apple GPU is a third device, not a second CUDA
+
+Through [warp-metal](https://github.com/DavidDobas/warp-metal) -- a community overlay on one
+exact Warp release, with a four-file patch to mujoco_warp -- the warp backend simulates on
+Apple Silicon's GPU (`AGENT_SETUP.md` §1.6). It is the same mjwarp code and the same seam, and
+it is not the same device:
+
+- **torch has no Metal device.** The environment's tensors are CPU tensors aliasing the Warp
+  arrays in unified memory, which is why the resolution carries a `sim_device` beside `device`
+  (`metal:0` beside `cpu`) and why `Simulation` waits for the GPU after every launch
+  (`utils/sim_device.synchronize`): a CPU read before the kernels finish sees the previous step, with
+  no error anywhere. On CUDA the torch stream ordering does that job.
+- **No conditional graph nodes.** mjwarp's solver loop ends on a condition evaluated inside the
+  CUDA graph; Metal has no such node, so the solver runs its fixed iteration count
+  (`graph_conditional = False`). Same answer when converged, more work when converged early.
+- **No float64, and 64-bit atomics are not atomic.** mjwarp is float32 throughout, so the first
+  does not bite; the second is the overlay's own caveat and nothing here has measured it.
+- **Threadgroup memory, not FLOPs, is the limit.** The patch keeps one Cholesky tile per SIMD
+  group and drops the blocked factorisation up to 64 DoF, and the overlay's author notes the
+  gap to CUDA widens with the environment count. The measurement agrees:
+
+| `--num_envs` | policy on | env-steps / s | iteration | vs native (1850) | vs RTX 5090 |
+|---|---|---|---|---|---|
+| 256 | cpu | 1948 | 3.2 s | 1.05x | |
+| 1024 | mps | 3469 | 7.1 s | 1.9x | |
+| 4096 | mps | 5243 | 18.8 s | 2.8x | 48x slower (§10: 0.39 s) |
+
+M3 Max, macOS 26.5, `jumper.tripod`, 3 iterations, 2026-10-08; one sample each, and the two 4096
+runs differed in collection time by a factor of two. The policy learning on MPS is what makes
+the 4096 row: with it on the CPU, learning took 6.7 s of a 40.8 s iteration and collection the
+rest, which says the CPU side was contended, not that the GPU was.
+
+**What has not been verified**: whether a policy trained here matches one from CUDA. §9.3's
+single-step residual was measured between native and warp; nothing has been measured between
+warp-on-Metal and warp-on-CUDA, and the same-seed training comparison §9.3 asks for is the one
+that would settle both. Until then a Metal checkpoint is reported as a Metal checkpoint, which
+is what the banner's `sim=` and the resolution's note are for.
+
 ## 10. Collision geometry
 
 `jumper.xml` carries two geom sets side by side, `<body>_visual` for display and

@@ -230,3 +230,18 @@ def test_only_the_missing_rust_steps_are_printed() -> None:
     assert not any("sudo" in step or "ldconfig" in step for step in mac), mac
     assert any("CMAKE_INSTALL_PREFIX=$HOME/" in step for step in mac), mac
     assert any(step.startswith("export CYCLONEDDS_HOME=$HOME/") for step in mac), mac
+
+
+def test_metal_eligibility_is_apple_silicon_on_macos_15_or_newer() -> None:
+    """The Apple GPU is a backend only through the warp-metal overlay, which
+    needs Apple Silicon and macOS 15 (Darwin 24). Eligibility is decided from
+    the machine, not from what is installed: the overlay is per environment and
+    gates.py checks that it loaded. The Linux and Intel rows are the control.
+    """
+    detect = _load("detect")
+    assert detect.metal_eligible("Darwin", "arm64", "25.5.0") is True
+    assert detect.metal_eligible("Darwin", "arm64", "24.0.0") is True
+    assert detect.metal_eligible("Darwin", "arm64", "23.6.0") is False, "macOS 14"
+    assert detect.metal_eligible("Darwin", "x86_64", "25.5.0") is False, "Intel Mac"
+    assert detect.metal_eligible("Linux", "aarch64", "6.8.0") is False
+    assert detect.metal_eligible("Darwin", "arm64", "unknown") is False

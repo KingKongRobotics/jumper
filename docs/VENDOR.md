@@ -78,7 +78,7 @@ editable.
 
 ## What was changed
 
-All modifications to upstream are confined to **five files**, each carrying an `[mjrl]`
+All modifications to upstream are confined to **eight files**, each carrying an `[mjrl]`
 marker and the reason for the change. `rsl_rl` is untouched.
 
 | File | Change |
@@ -86,7 +86,10 @@ marker and the reason for the change. `rsl_rl` is untouched.
 | `mjlab/sim/__init__.py` | **New**: `set_simulation_cls` / `get_simulation_cls`, making `Simulation` replaceable. This is the seam itself |
 | `mjlab/envs/manager_based_rl_env.py` | Constructing the sim goes from `Simulation(...)` to `get_simulation_cls()(...)`. With nothing registered it returns `Simulation`, byte-for-byte upstream behaviour |
 | `mjlab/sensor/sensor_context.py` | Dispatch the sensor context by backend. `RenderContext` is a mjwarp thing and the native path has no `model.struct`, so buffers are allocated on the CPU in the same layout instead |
-| `mjlab/sensor/raycast_sensor.py` | Same dispatch. This is the only mjwarp-bound part of the whole `RayCastSensor`; the native path goes through `mujoco.mj_ray` |
+| `mjlab/sensor/raycast_sensor.py` | Same dispatch. This is the only mjwarp-bound part of the whole `RayCastSensor`; the native path goes through `mujoco.mj_ray`. Its Warp device and ray buffers come from `sim_device()` as well |
+| `mjlab/utils/sim_device.py` | **New**: `set_sim_device` / `sim_device` / `synchronize` -- which Warp device simulates for a torch device, registered beside the seam by `use_backend()`. Upstream's rule (the torch device's own name) is what you get with nothing registered; on Apple Silicon the resolution registers `metal:0` for torch's `cpu` |
+| `mjlab/sim/sim.py` | Picks its Warp device through `sim_device()`, waits for a Metal device after every launch (CPU tensors read its unified memory directly), runs the solver for its fixed iteration count on Metal (no conditional graph nodes) and lets Metal capture graphs |
+| `mjlab/sim/sim_data.py` | `TorchArray` took every non-cpu Warp array for a CUDA one and built a `torch.cuda.Stream` for it; it now asks `is_cuda` |
 | `mjlab/rl/config.py` | **New field**: forwards rsl_rl's symmetry augmentation / mirror-loss parameter, which this wrapper dataclass did not expose. Delete it if upstream adds the same field |
 
 To find every change:

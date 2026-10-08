@@ -60,7 +60,8 @@ whether there is a GPU.** Which subsections each of the five combinations needs:
 | Linux | no | 1.1 – 1.3 | `native:cpu` |
 | Windows | yes | 1.1 – 1.5 | `warp:cuda`, `native:cpu` |
 | Windows | no | 1.1 – 1.3, **1.5** | `native:cpu` |
-| macOS | — (no CUDA, no exceptions) | 1.1 – 1.3 | `native:cpu` |
+| macOS, Apple Silicon | — (no CUDA, no exceptions) | 1.1 – 1.3, **1.6** | `native:cpu`; with 1.6, warp with the simulation on the Apple GPU |
+| macOS, Intel | — | 1.1 – 1.3 | `native:cpu` |
 
 Every row also takes 2.1 and 2.2, the controller's toolchain, which does not branch on the GPU.
 
@@ -153,7 +154,46 @@ pip install torch torchvision
 
 > **`warp:cuda` is definitively unavailable on macOS** (Apple Silicon has no CUDA, no
 > exceptions). CPU training there goes through the `native:cpu` backend, which needs no CUDA at
-> all.
+> all. The Apple GPU is a different matter: section 1.6 puts the simulation on it through
+> warp-metal, with the tensors still on the CPU.
+
+### 1.6 macOS: the Apple GPU through warp-metal
+
+[warp-metal](https://github.com/DavidDobas/warp-metal) is a community overlay that adds a
+`metal:0` device to NVIDIA Warp, and its author keeps a four-file patch to mujoco_warp 3.11.0
+that lets its kernels run off CUDA. Neither is on PyPI; the `metal` extra pins both by URL, the
+wheel by its digest, and the exact `warp-lang` the overlay was built for -- the two versions
+must match or Warp loads unmodified, with one line on stderr and a working CPU-only device,
+which is the silent failure gate A exists for.
+
+Apple Silicon on macOS 15 or newer, after section 2:
+
+```bash
+pip install -e ".[metal]"
+python -c "import warp as wp; wp.init(); print(wp.get_devices())"   # ['cpu', 'metal:0']
+```
+
+torch has no Metal device, so nothing changes on the torch side: the environment's tensors are
+`cpu` tensors that alias the Warp arrays in unified memory, and `resolve()` puts the simulation
+on `metal:0` for `--backend warp --device cpu` -- which is also what `--backend auto` picks on
+such a machine. The banner says `sim=metal:0`, and `agent=mps` when torch has MPS, where the
+policy then learns. `MJRL_SIM_DEVICE=cpu` keeps the simulation off the GPU (warp's serial cpu
+device, the debugging path); `MJRL_AGENT_DEVICE=cpu` keeps the policy on the CPU.
+
+Measured on an M3 Max (macOS 26.5, 64 GB), `jumper.tripod`, 3 iterations, 2026-10-08:
+
+| `--num_envs` | policy on | env-steps / s | iteration |
+|---|---|---|---|
+| 64 | cpu | 1200 | 1.3 s |
+| 256 | cpu | 1948 | 3.2 s |
+| 1024 | cpu / mps | 3223 / 3469 | 7.6 / 7.1 s |
+| 4096 | cpu / mps | 2407 / 5243 | 40.8 / 18.8 s |
+
+Against `native:cpu`'s ceiling of 1850 env-steps/s on the same machine that is 2.8x at 4096
+environments; against the RTX 5090 in `DESIGN.md` §10 (0.39 s per iteration at 4096) it is about
+48x slower. One sample each -- the two 4096 runs differed in collection time by a factor of two.
+Whether a policy trained on Metal matches one from CUDA has not been checked; `DESIGN.md` §9.5
+says what is known.
 
 ### 1.4 System prerequisite on GPU machines: the NVIDIA driver
 
@@ -356,6 +396,11 @@ Seeing only `['cpu']` is a failure: the driver or CUDA toolchain has a problem a
 `warp:cuda` backend is unavailable.
 
 **On a machine without a GPU**: `['cpu']` alone is the **expected** result, not a failure.
+
+**On Apple Silicon with the `metal` extra** (1.6): the list must be `['cpu', 'metal:0']`. `['cpu']`
+alone means the overlay did not load -- the installed `warp-lang` is not the version it was built
+for (`python -c "import warp_metal; print(warp_metal.status())"` says), or macOS is older than 15.
+`gates.py` checks for `warp_metal` and requires the device when it is installed.
 
 ### Gate B — Native MuJoCo's multi-threaded batch interface
 
@@ -626,9 +671,12 @@ gets one run through without a rebuild.
    Isaac Lab uses `mujoco 3.10`, and they break each other. Before every `pip`, use the
    verification in 1.2 to confirm `sys.prefix` points at the repository's `.venv`.
 4. **Never try to make `warp:cuda` work on macOS** — the platform has no CUDA and there is no
-   workaround.
-5. **Never train with `warp:cpu`** — it compiles kernels to CPU code and runs them serially, and
-   is officially a debugging device. Use `native:cpu`, which is about 30× faster.
+   workaround. The Apple GPU is reached through warp-metal (1.6), which is a different device
+   and a different backend, not CUDA.
+5. **Never train with warp's serial cpu device** — it compiles kernels to CPU code and runs them
+   serially, and is officially a debugging device. Use `native:cpu`, which is about 30× faster.
+   `--backend warp --device cpu` is that path only when the simulation is on cpu: on Apple
+   Silicon with the `metal` extra it simulates on `metal:0`, and the banner's `sim=` says which.
 6. **Never modify `rl/mjlab/` or `rl/rsl_rl/` without a marker** — see [`VENDOR.md`](VENDOR.md):
    every change must carry `# [mjrl] reason: …`, or it cannot be recovered when syncing with
    upstream.

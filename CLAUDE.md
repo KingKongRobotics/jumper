@@ -55,8 +55,8 @@ Deployment failures are silent rather than loud -- a wrong joint order or an unm
 profile gives a robot that runs and is wrong. The `deploy` skill sequences the whole path;
 `deploy/README.md` is the map.
 
-On macOS the live viewer needs `.venv/bin/mjpython` rather than `python`; without it the run
-goes headless and says so. `--headless` turns the viewer off explicitly.
+On macOS the live viewer needs `.venv/bin/mjpython`, else the run goes headless and says so;
+`--headless` turns it off. The `metal` extra simulates on the Apple GPU (`AGENT_SETUP.md` §1.6).
 
 ## Architecture
 

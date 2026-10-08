@@ -65,6 +65,17 @@ Issues = "https://github.com/KingKongRobotics/jumper/issues"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
+# The Apple GPU, through warp-metal: a community overlay that adds a Metal
+# device to one exact warp-lang release (the two versions must match or Warp
+# loads unmodified), plus the four-file patch to mujoco_warp 3.11.0 that lets
+# its kernels run off CUDA. Neither is on PyPI, so both are pinned by URL and
+# the wheel by its digest. Apple Silicon and macOS 15 or newer only; see
+# docs/AGENT_SETUP.md section 1.6 and docs/DESIGN.md section 9.5.
+metal = [
+    "warp-lang==1.17.0",
+    "warp-metal @ https://github.com/DavidDobas/warp-metal/releases/download/v1.17.0.3/warp_metal-1.17.0.3-py3-none-macosx_11_0_arm64.whl#sha256=fab8f30586105f5776a7e6ae88740ce943da204a2c8a7cdab4021f81cbbbaf57 ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "mujoco-warp @ git+https://github.com/DavidDobas/mujoco_warp@95927738a3727c27646820c3f58b0d13fd7028cd",
+]
 
 [build-system]
 requires = ["setuptools>=64"]
