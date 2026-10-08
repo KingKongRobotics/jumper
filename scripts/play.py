@@ -198,6 +198,17 @@ def main() -> None:
         help="stop after this many control steps. Runs until the window is closed "
         "(or forever, when headless) if not given",
     )
+    r.add_argument("--checkpoint-command-ranges", action="store_true",
+                   help="sample only the checkpoint's saved velocity curriculum rung; "
+                   "refuses missing or unsupported command provenance")
+    r.add_argument("--command", nargs=3, type=float, metavar=("VX", "VY", "YAW"),
+                   help="hold a fixed body-frame velocity command, including after resets; "
+                   "must lie inside the checkpoint's trained command ranges")
+    r.add_argument("--evaluation-out", type=Path, metavar="JSON",
+                   help="write fixed-command velocity errors and reset counts; "
+                   "requires --command and finite positive --steps")
+    r.add_argument("--replay-info-out", type=Path, metavar="JSON",
+                   help="write resolved replay command ranges, source and simulation rates")
     r.add_argument(
         "--physics-hz", type=float, default=1000.0, metavar="HZ",
         help="physics rate for replay, **independent of the control rate**. The "
@@ -269,6 +280,7 @@ def main() -> None:
         # `tasks.load_cli_args`. Nothing here knows which, or how many.
         args = parse_with_task_args(parser, opened.default_task if opened else None)
         _validate_video_args(parser, args)
+        _validate_command_args(parser, args)
         if opened is not None and (
             args.checkpoint or args.agent != "trained"
         ):
@@ -324,6 +336,18 @@ def _validate_video_args(parser, args) -> None:
         parser.error("--video-distance must be finite and positive")
 
 
+def _validate_command_args(parser, args) -> None:
+    requested = args.checkpoint_command_ranges or args.command is not None or args.evaluation_out
+    if requested and (args.app is not None or args.agent != "trained"):
+        parser.error("fixed commands and checkpoint command ranges require a trained checkpoint")
+    if args.command is not None and not all(math.isfinite(x) for x in args.command):
+        parser.error("--command must contain three finite values")
+    if args.evaluation_out is not None and (
+        args.command is None or args.steps is None or args.steps <= 0
+    ):
+        parser.error("--evaluation-out requires --command and positive finite --steps")
+
+
 def _run(spec, res, asset: Path | None, args) -> None:
     """Build the environment and run the policy. Heavy imports happen here."""
     import torch
@@ -351,6 +375,18 @@ def _run(spec, res, asset: Path | None, args) -> None:
     env_cfg = tasks.load_env_cfg(
         spec.id, asset=asset, play=True, task_args=args.task_args
     )
+    command_ranges = None
+    if args.checkpoint_command_ranges or args.command is not None:
+        from mjrl.replay import configure_velocity_replay
+
+        training_cfg = tasks.load_env_cfg(spec.id, asset=asset, task_args=args.task_args)
+        saved = torch.load(ckpt, map_location="cpu", weights_only=False)
+        try:
+            command_ranges = configure_velocity_replay(env_cfg, training_cfg, saved, args.command)
+        except ValueError as error:
+            raise SystemExit(f"[mjrl] replay command: {error}") from None
+        del saved
+        print(f"[mjrl] replay commands: {command_ranges}")
     _set_physics_rate(env_cfg, args.physics_hz)
     if args.app is not None:
         from mjrl.app_play import AppUnavailable, step_the_world_at
@@ -458,8 +494,44 @@ def _run(spec, res, asset: Path | None, args) -> None:
             # beside the speed -- the random sampler's, which nothing drives the
             # robot with -- so only the speed, which is the robot's.
             status = None if args.app is not None else tasks.load_play_status(spec.id)
-            _loop(wrapped, policy, viewer, args.steps, speed,
-                  status or _speed_text, monitor, video)
+            from mjrl.replay import FixedCommandEvaluation
+
+            evaluation = FixedCommandEvaluation(wrapped, args.command, command_ranges) if (
+                args.evaluation_out is not None
+            ) else None
+            completed_steps = _loop(wrapped, policy, viewer, args.steps, speed,
+                                    status or _speed_text, monitor, video, evaluation)
+            replay_metadata = {
+                "task": spec.id, "checkpoint": str(ckpt.resolve()) if ckpt else None,
+                "physics_hz": 1.0 / env_cfg.sim.mujoco.timestep,
+                "control_hz": 1.0 / env.step_dt, "control_dt": env.step_dt,
+                "observation_noise": args.obs_noise, "control_steps": completed_steps,
+                "scene": args.scene or "task default",
+                "simulated_seconds": completed_steps * env.step_dt,
+            }
+            if evaluation is not None:
+                evaluation.write(args.evaluation_out, **replay_metadata)
+                print(f"[mjrl] fixed-command evaluation {args.evaluation_out.resolve()}")
+            if args.replay_info_out is not None:
+                import json
+
+                from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommandCfg
+
+                term = env_cfg.commands.get("twist")
+                supported = isinstance(term, UniformVelocityCommandCfg)
+                info = command_ranges or {
+                    "status": "not_requested", "source": "replay_task_config",
+                    "curriculum_level": None,
+                    "ranges": {axis: list(getattr(term.ranges, axis)) for axis in (
+                        "lin_vel_x", "lin_vel_y", "ang_vel_z"
+                    )} if supported else None,
+                }
+                args.replay_info_out.parent.mkdir(parents=True, exist_ok=True)
+                args.replay_info_out.write_text(json.dumps({
+                    "schema": "replay_info/1", **replay_metadata,
+                    "supports_velocity_command": supported, "command_ranges": info,
+                }, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+                print(f"[mjrl] replay settings {args.replay_info_out.resolve()}")
     finally:
         # Before `env.close()`: the monitor holds no simulation state, but it
         # prints where it wrote things, and a line printed after the environment
@@ -529,7 +601,7 @@ def _speed_text(entity, index: int, env) -> str:
 
 
 def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
-          readout=_speed_text, monitor=None, video=None) -> None:
+          readout=_speed_text, monitor=None, video=None, evaluation=None) -> int:
     """Step the environment under the policy until the window closes.
 
     The loop lives here rather than inside the viewer so that headless replay --
@@ -572,7 +644,9 @@ def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
         # that overruns does not push the next one late.
         pacer.wait()
         with torch.inference_mode():
-            obs, _, _, _ = env.step(policy(obs))
+            obs, _, dones, _ = env.step(policy(obs))
+        if evaluation is not None:
+            evaluation.update(dones)
         # After the step, so the telemetry is the state the picture is showing
         # rather than the one it was showing. The monitor decimates its own
         # redraw; see `mjrl/viewer/monitor.py` for why that matters to the pacer.
@@ -581,6 +655,7 @@ def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
         if video is not None:
             video.update()
         step += 1
+    return step
 
 
 if __name__ == "__main__":

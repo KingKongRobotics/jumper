@@ -99,6 +99,9 @@ def make_config(repo: Path, *, task: str, model: str, num_envs: int) -> dict:
     return {
         "task": task, "model": model, "num_envs": num_envs,
         "backend": "warp", "device": "cuda:0", **source_identity(repo),
+        "repository_url": subprocess.check_output(
+            ["git", "remote", "get-url", "origin"], cwd=repo, text=True
+        ).strip(),
         "runtime_versions": {p: importlib.metadata.version(p) for p in RUNTIME_PACKAGES},
         "mjrl_environment": {k: v for k, v in os.environ.items() if k.startswith("MJRL_")},
     }
@@ -390,9 +393,15 @@ def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dic
             tags[tag] = sorted(points, key=lambda point: (point["step"], point["wall_time"]))
     if not tags:
         raise ValueError(f"TensorBoard event files contain no scalar samples: {run}")
+    progress = {}
+    for name in ("level", "lin_err", "lin_err_bar", "lin_range", "ang_range"):
+        tag = f"Curriculum/command/{name}"
+        finite = [point for point in tags.get(tag, []) if isinstance(point["value"], float)]
+        if finite:
+            progress[tag] = dict(max(finite, key=lambda point: (point["step"], point["wall_time"])))
     output.parent.mkdir(parents=True, exist_ok=True)
     metrics = {"schema": 1, "run": str(run), "tags": tags,
-               "nonfinite_samples": nonfinite_samples}
+               "nonfinite_samples": nonfinite_samples, "progress": progress}
     atomic_json(output, metrics)
     with tempfile.NamedTemporaryFile(mode="w", newline="", encoding="utf-8",
                                      dir=output.parent, prefix=".scalars-", delete=False) as stream:
@@ -419,16 +428,30 @@ def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dic
                      "Perf/total_fps")
         finite_tags = [tag for tag, points in tags.items()
                        if any(isinstance(point["value"], float) for point in points)]
+        curriculum = [tag for tag in ("Curriculum/command/level", "Curriculum/command/lin_err")
+                      if tag in finite_tags]
         selected = [tag for tag in preferred if tag in finite_tags]
-        selected += [tag for tag in finite_tags if tag not in selected][:6 - len(selected)]
+        selected += [tag for tag in finite_tags if tag not in selected and tag not in curriculum
+                     and tag != "Curriculum/command/lin_err_bar"][:6 - len(selected)]
+        selected += curriculum
         rows = max(1, (len(selected) + 1) // 2)
         figure, axes = plt.subplots(rows, 2, figsize=(12, 3.5 * rows), squeeze=False)
         try:
             for axis, tag in zip(axes.flat, selected):
                 points = tags[tag]
-                axis.plot([point["step"] for point in points],
-                          [point["value"] if isinstance(point["value"], float) else float("nan")
-                           for point in points])
+                values = [point["value"] if isinstance(point["value"], float) else float("nan")
+                          for point in points]
+                if tag == "Curriculum/command/lin_err":
+                    axis.plot([point["step"] for point in points], values, label="Measured error")
+                    threshold = tags.get("Curriculum/command/lin_err_bar", [])
+                    if threshold:
+                        axis.plot([point["step"] for point in threshold],
+                                  [point["value"] if isinstance(point["value"], float)
+                                   else float("nan") for point in threshold],
+                                  label="Promotion threshold", linestyle="--")
+                        axis.legend()
+                else:
+                    axis.plot([point["step"] for point in points], values)
                 axis.set(title=tag, xlabel="Training iteration", ylabel="Recorded scalar value")
                 axis.grid(True, alpha=0.3)
             for axis in list(axes.flat)[len(selected):]:
@@ -443,7 +466,7 @@ def collect_metrics(run: Path, output: Path, *, plot: Path | None = None) -> dic
             plt.close(figure)
     return {"run": str(run), "output": str(output), "scalar_tags": len(tags),
             "samples": sum(len(points) for points in tags.values()), "plotted_tags": selected,
-            "nonfinite_samples": nonfinite_samples}
+            "nonfinite_samples": nonfinite_samples, "progress": progress}
 
 
 def create_backup(run: Path, output: Path, *, export: Path | None = None,
@@ -502,8 +525,146 @@ def create_backup(run: Path, output: Path, *, export: Path | None = None,
     return output
 
 
+def _inspect_archive(archive: zipfile.ZipFile, *, max_bytes: int, max_members: int,
+                     max_metadata_bytes: int) -> dict:
+    """Shared inspection for listing and restore; never deserialize policy objects."""
+    entries = archive.infolist()
+    expanded_bytes = sum(entry.file_size for entry in entries)
+    if len(entries) > max_members or expanded_bytes > max_bytes:
+        raise ValueError("backup exceeds restore size/member limits")
+    seen = set()
+    for entry in entries:
+        name = entry.orig_filename
+        path = PurePosixPath(name)
+        if (not name or "\x00" in name or "\\" in name or ":" in name or path.is_absolute()
+                or any(part in ("..", ".") for part in name.rstrip("/").split("/"))
+                or "" in name.rstrip("/").split("/") or str(path) in seen):
+            raise ValueError(f"unsafe or duplicate archive path: {name}")
+        seen.add(str(path))
+        mode = entry.external_attr >> 16
+        if stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR)):
+            raise ValueError(f"archive contains a non-regular entry: {name}")
+        if entry.flag_bits & 1:
+            raise ValueError("encrypted backups are unsupported")
+    # A regular member cannot also be an ancestor of another member.
+    files = {entry.filename.rstrip("/") for entry in entries if not entry.is_dir()}
+    if any(str(parent) in files for entry in entries
+           for parent in PurePosixPath(entry.filename).parents if str(parent) != "."):
+        raise ValueError("unsafe archive path conflicts with a parent file")
+
+    def strict_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError(f"duplicate metadata key: {key}")
+            value[key] = item
+        return value
+
+    def nonfinite(value):
+        raise ValueError(f"non-finite metadata value: {value}")
+
+    def metadata(name):
+        try:
+            info = archive.getinfo(name)
+        except KeyError as exc:
+            raise ValueError(f"backup is missing metadata: {name}") from exc
+        if info.file_size > max_metadata_bytes:
+            raise ValueError(f"backup metadata exceeds size limit: {name}")
+        with archive.open(info) as stream:
+            data = stream.read(max_metadata_bytes + 1)
+        if len(data) > max_metadata_bytes:
+            raise ValueError(f"backup metadata exceeds size limit: {name}")
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=strict_object,
+                           parse_constant=nonfinite)
+        if not isinstance(value, dict):
+            raise ValueError(f"backup metadata must be an object: {name}")  # noqa: TRY004
+        return value
+
+    backup_metadata = metadata("backup.json")
+    if (backup_metadata != {"schema": SCHEMA, "run": "run"}
+            or type(backup_metadata.get("schema")) is not int):
+        raise ValueError("unsupported backup schema")
+    saved = metadata(f"run/{MANIFEST}")
+    if saved.get("schema") != SCHEMA or type(saved.get("schema")) is not int:
+        raise ValueError("unsupported run manifest schema")
+    config = saved.get("config")
+    if not isinstance(config, dict) or any(key not in config for key in COMPATIBILITY):
+        raise ValueError("backup run config is missing compatibility fields")
+    for key in ("task", "model", "backend", "device"):
+        if not isinstance(config[key], str) or not config[key].strip():
+            raise ValueError(f"backup run config has invalid {key}")
+    if type(config["num_envs"]) is not int or config["num_envs"] < 1:
+        raise ValueError("backup run config has invalid num_envs")
+    for key, pattern in (("revision", r"[0-9a-f]{40}(?:[0-9a-f]{24})?"),
+                         ("source_sha256", r"[0-9a-f]{64}")):
+        if not isinstance(config[key], str) or not re.fullmatch(pattern, config[key]):
+            raise ValueError(f"backup run config has invalid {key}")
+    for key in ("runtime_versions", "mjrl_environment"):
+        if not isinstance(config[key], dict) or any(
+            not isinstance(name, str) or not isinstance(value, str)
+            for name, value in config[key].items()
+        ):
+            raise ValueError(f"backup run config has invalid {key}")
+    if "repository_url" in config and not isinstance(config["repository_url"], str):
+        raise ValueError("backup run config has invalid repository_url")
+    recorded = saved.get("checkpoints")
+    if not isinstance(recorded, dict) or not recorded:
+        raise ValueError("backup checkpoint manifest is empty or invalid")
+    if any(not isinstance(name, str) or not CHECKPOINT.fullmatch(name)
+           or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
+           for name, digest in recorded.items()):
+        raise ValueError("backup checkpoint manifest has invalid names or hashes")
+    candidates = []
+    for name, expected in recorded.items():
+        member = f"run/{name}"
+        if member not in files:
+            continue
+        digest = hashlib.sha256()
+        # Policy files are ZIPs too. Spill larger saves to disk instead of accumulating RAM.
+        with tempfile.SpooledTemporaryFile(max_size=8 * 1024**2) as checkpoint:
+            with archive.open(member) as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    checkpoint.write(chunk)
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                continue
+            checkpoint.seek(0)
+            try:
+                with zipfile.ZipFile(checkpoint) as contents:
+                    members = contents.infolist()
+                    if not members or len(members) > max_members:
+                        continue
+                    if sum(info.file_size for info in members) > max_bytes:
+                        raise ValueError("checkpoint exceeds expanded size limit")
+                    if contents.testzip() is not None:
+                        continue
+            except (zipfile.BadZipFile, EOFError):
+                continue
+        candidates.append((int(CHECKPOINT.fullmatch(name)[1]), member))
+    if not candidates:
+        raise ValueError("backup has no complete matching checkpoint")
+    return {"schema": SCHEMA, "checkpoint": max(candidates)[1], "config": config,
+            "source": {key: config[key] for key in ("revision", "source_sha256")},
+            "runtime": config["runtime_versions"], "env_count": config["num_envs"],
+            "members": [{"path": entry.filename, "size": entry.file_size} for entry in entries],
+            "expanded_bytes": expanded_bytes}
+
+
+def inspect_backup(archive_path: Path, *, max_bytes: int = 10 * 1024**3,
+                   max_members: int = 10000, max_metadata_bytes: int = 1024**2) -> dict:
+    """Inspect bounded metadata, all member paths and recorded checkpoint integrity."""
+    with zipfile.ZipFile(archive_path) as archive:
+        result = _inspect_archive(archive, max_bytes=max_bytes, max_members=max_members,
+                                  max_metadata_bytes=max_metadata_bytes)
+    if not result["config"].get("repository_url"):
+        print("[WARN] This older backup has no repository_url. Set the advanced "
+              "REPOSITORY_URL to the repository containing its recorded revision; "
+              "do not assume the upstream repository contains a fork commit.", flush=True)
+    return {"archive": str(Path(archive_path).resolve()), **result}
+
+
 def restore_backup(archive_path: Path, destination: Path, *, max_bytes: int = 10 * 1024**3,
-                   max_members: int = 10000) -> Path:
+                   max_members: int = 10000, max_metadata_bytes: int = 1024**2) -> Path:
     """Validate all paths before extracting into a new directory; never overwrite a run."""
     destination = Path(destination).absolute()
     if destination.exists() or destination.is_symlink():
@@ -512,23 +673,9 @@ def restore_backup(archive_path: Path, destination: Path, *, max_bytes: int = 10
     temporary = Path(tempfile.mkdtemp(prefix=".restore-", dir=destination.parent))
     try:
         with zipfile.ZipFile(archive_path) as archive:
+            inspected = _inspect_archive(archive, max_bytes=max_bytes, max_members=max_members,
+                                         max_metadata_bytes=max_metadata_bytes)
             entries = archive.infolist()
-            if len(entries) > max_members or sum(i.file_size for i in entries) > max_bytes:
-                raise ValueError("backup exceeds restore size/member limits")
-            seen = set()
-            for entry in entries:
-                name = entry.filename
-                path = PurePosixPath(name)
-                if (not name or "\\" in name or ":" in name or path.is_absolute()
-                        or any(part in ("..", ".") for part in name.rstrip("/").split("/"))
-                        or "" in name.rstrip("/").split("/") or str(path) in seen):
-                    raise ValueError(f"unsafe or duplicate archive path: {name}")
-                seen.add(str(path))
-                mode = entry.external_attr >> 16
-                if stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR)):
-                    raise ValueError(f"archive contains a non-regular entry: {name}")
-                if entry.flag_bits & 1:
-                    raise ValueError("encrypted backups are unsupported")
             total = 0
             for entry in entries:
                 target = temporary.joinpath(*PurePosixPath(entry.filename).parts)
@@ -542,14 +689,9 @@ def restore_backup(archive_path: Path, destination: Path, *, max_bytes: int = 10
                         if total > max_bytes:
                             raise ValueError("expanded backup exceeds restore size limit")
                         output.write(chunk)
-        metadata = json.loads((temporary / "backup.json").read_text(encoding="utf-8"))
-        if metadata != {"schema": SCHEMA, "run": "run"}:
-            raise ValueError("unsupported backup schema")
         run = temporary / "run"
         saved = json.loads((run / MANIFEST).read_text(encoding="utf-8"))
-        if saved.get("schema") != SCHEMA:
-            raise ValueError("unsupported run manifest schema")
-        checkpoint = latest_checkpoint(run)
+        checkpoint = temporary.joinpath(*PurePosixPath(inspected["checkpoint"]).parts)
         recorded = saved.get("checkpoints", {}).get(checkpoint.name)
         if not recorded or sha256(checkpoint) != recorded:
             raise ValueError("backup checkpoint does not match its manifest")
@@ -619,6 +761,23 @@ print("[PASS] Warp CUDA enumeration and executed kernel:", devices)
             **source_identity(repo)}
 
 
+def training_rates(cfg) -> dict:
+    """Describe resolved simulation timing and whether fixed velocity replay applies."""
+    twist = cfg.commands.get("twist")
+    ranges = getattr(twist, "ranges", None)
+    supported = True
+    for name in ("lin_vel_x", "lin_vel_y", "ang_vel_z"):
+        bounds = getattr(ranges, name, None)
+        if (not isinstance(bounds, (tuple, list)) or len(bounds) != 2
+                or not all(isinstance(value, (int, float)) and math.isfinite(value)
+                           for value in bounds) or bounds[0] > bounds[1]):
+            supported = False
+            break
+    return {"physics_hz": 1.0 / cfg.sim.mujoco.timestep,
+            "control_hz": 1.0 / (cfg.sim.mujoco.timestep * cfg.decimation),
+            "supports_velocity_command": supported}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="mode", required=True)
@@ -648,6 +807,9 @@ def main() -> None:
     restore.add_argument("--archive", type=Path, required=True)
     restore.add_argument("--destination", type=Path, required=True)
     restore.add_argument("--out", type=Path, required=True)
+    inspect = commands.add_parser("inspect")
+    inspect.add_argument("--archive", type=Path, required=True)
+    inspect.add_argument("--out", type=Path, required=True)
     rates = commands.add_parser("rates")
     rates.add_argument("--repo", type=Path, required=True)
     rates.add_argument("--task", required=True)
@@ -677,6 +839,8 @@ def main() -> None:
         restored = restore_backup(args.archive, args.destination)
         atomic_json(args.out, {"checkpoint": str(restored), "run": str(restored.parent)})
         print(f"[colab] restored checkpoint: {restored}")
+    elif args.mode == "inspect":
+        atomic_json(args.out, inspect_backup(args.archive))
     else:
         import tasks
         from mjrl.dotenv import load_dotenv
@@ -684,8 +848,7 @@ def main() -> None:
         load_dotenv(args.repo / ".env", args.repo / ".env.local")
         asset = tasks.get(args.task).resolve_asset(args.model)
         cfg = tasks.load_env_cfg(args.task, asset=asset)
-        atomic_json(args.out, {"physics_hz": 1.0 / cfg.sim.mujoco.timestep,
-                               "control_hz": 1.0 / (cfg.sim.mujoco.timestep * cfg.decimation)})
+        atomic_json(args.out, training_rates(cfg))
 
 
 if __name__ == "__main__":

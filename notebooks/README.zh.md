@@ -1,71 +1,55 @@
-<!-- tracks: README.md @ sha256:7880c98fa5d5b090 -->
+<!-- tracks: README.md @ sha256:0ae3f849ff213d6c -->
 
 # 在 Colab 上运行 Jumper
 
 [在 Colab 中打开](https://colab.research.google.com/github/KingKongRobotics/jumper/blob/main/notebooks/jumper_colab.ipynb)
 · [English](README.md) · [完整指南](../docs/COLAB.zh.md)
 
-用 Colab GPU 训练 Jumper，在 MuJoCo 中看回放，再把结果下载回来。
-你的电脑只需要浏览器，不需要 WSL 或本地 GPU。
+用 Colab GPU 训练，查看曲线，在 MuJoCo 中回放策略，再下载结果。你的电脑只需要浏览器。
 
-正式入口和 Notebook 默认值使用 `KingKongRobotics/jumper` 的 `main`。
-PR 合并前，请打开[预览入口](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)，在第一个表单中将
-`REPOSITORY_URL` 设为 `https://github.com/tianrking/jumper.git`，
-`SOURCE_REVISION` 设为 `codex/colab-training-and-video`。
+合并前使用 [PR 预览](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)。
+开始新训练时，在高级源码设置中选择 `https://github.com/tianrking/jumper.git` 和
+`codex/colab-training-and-video`。正式入口和默认值使用上游 `main`。
 
 ## 开始使用
 
-1. 打开 Notebook，保存副本，选择 GPU 运行时。
-2. 在第一个表单中选择任务和参数，然后按顺序运行各单元。
-3. 观看已有舞蹈，完成五轮短训练检查，再开始训练。
-4. 查看曲线，回放自己的检查点，下载导出文件和备份。
+保存 Notebook 副本，选择 GPU 运行时，然后选一条路径：
 
-安装在 Notebook 独立环境中进行，并检查真实 CUDA 和 Warp 执行。主训练默认
-使用 `jumper.tripod`、256 个并行环境，训练 500 次迭代。舞蹈演示使用已有策略；
-你自己的训练会产生另一份行走策略。
+- **新训练：** 选择任务、环境数和迭代次数 → 安装与 GPU 检查 → 训练 → 曲线、回放、导出和备份。
+- **继续训练：** 选择上传 ZIP 或 Drive 检查点 → 读取保存的设置 → 安装与 GPU 检查 → 恢复并继续训练 → 下载新备份。
 
-## 本次训练的视频
+新训练默认使用 `jumper.tripod`、256 个环境、500 次迭代。续训时，迭代次数指新增的更新次数。
+训练单元会先打印模式、任务、环境数和检查点。续训的源码与核心包版本来自备份；
+修改回放设置不会清掉已恢复的检查点。已有舞蹈演示和短训练检查都是可选项，与主训练分开。
 
-这是本次 Colab 训练 500 次迭代后，`model_499.pt` 的行走回放。视频是十秒真实
-MuJoCo 仿真，640 x 480、30 fps，不是已有舞蹈演示。
+## 可以做什么
+
+| 功能 | 结果 |
+|---|---|
+| 训练或续训 | 检查点、配置和日志。 |
+| 查看进展 | 完整标量 JSON/CSV、曲线，以及任务提供的课程等级、跟踪误差和命令范围。 |
+| 回放 | 内嵌 MP4；无需重训即可改时长、帧率、尺寸、场景和摄像机。可选关节位置、速度、力矩、足端力 CSV/PNG。 |
+| 评估速度策略 | 固定前进、侧移、转向和站立命令，可选检查点的课程范围，输出 JSON 报告。 |
+| 导出 | ONNX actor、`layout.json`、README 和检查点副本，保存到新目录。 |
+| 备份 | 完整检查点和已有产物的 ZIP。曲线、回放或导出失败时，仍能备份检查点。 |
+
+修改高级回放设置后，重新运行回放单元即可。任务和模型必须与检查点兼容。
+视频和测量数据来自仿真；ONNX 导出之后，实机使用仍需走独立的[部署流程](../deploy/README.zh.md)。
+
+运行时结束前下载 ZIP。只保存 Notebook 不会保存模型。可选 Drive 快照会在训练期间复制完整
+检查点；Drive 挂载尚未实测。`DOWNLOAD_FILES` 控制自动下载，关闭后仍能预览并手动下载。
+
+## 视频与实测记录
+
+这段十秒回放来自真实 Colab T4 上使用源码 `19e8f4d` 训练 500 次迭代的
+`model_499.pt`，是本次训练出的行走策略，不是已有舞蹈。该次运行仍处于课程等级 0；
+完成训练次数不代表步态已经收敛。
 
 https://github.com/user-attachments/assets/e0e3b700-d1f6-486f-be20-98d4b69639ea
 
-## 调整回放，不用重新训练
+该会话完成了训练、视频与关节记录、标量导出、ONNX、ZIP 备份、恢复和再训练五次。
+ZIP 约 116 MiB。恢复这份旧备份时，记录的 `19e8f4d` 提交仍在 `tianrking/jumper`；
+上游压缩合并可能不保留它。
 
-在表单中设置仿真时长、帧率、偶数像素尺寸、场景和摄像机距离。先运行参数设置
-单元，再运行训练后策略的回放单元，不需要重跑安装或训练。同一检查点的任务和
-模型保持不变。
-`task default` 使用任务自己的场景，也可以换场景尝试不同地形或摩擦条件。
-Notebook 直接显示 MP4。这些设置改变回放，不修改已保存的策略。
-
-打开 `RECORD_JOINTS` 后，回放还会保存关节位置、速度和力矩的 CSV 与图；有
-接触传感器的任务也可以包含足端力。这些数据在仿真中测量，不是实机采集。
-
-## 可以保存的文件
-
-| 输出 | 内容 |
-|---|---|
-| 训练曲线 | 全部已记录 TensorBoard 标量的 JSON、CSV，以及内嵌显示的六面板 PNG 摘要。 |
-| 回放 | MP4、仿真设置，以及可选关节 CSV/PNG。 |
-| 策略导出 | ONNX actor、`layout.json`、README 和检查点副本，每次导出使用新目录。 |
-| 备份 ZIP | 检查点、配置、日志、曲线、运行环境/EGL 报告及匹配的回放和导出。本次 500 次迭代备份约 116 MiB。 |
-
-文件按每次运行保存，并与选定检查点关联，不会把旧视频或旧导出悄悄当成新结果
-打包。下次会话可以恢复 ZIP，使用其中记录的源码和核心包版本继续训练。本次
-备份已经成功恢复，并继续训练了五次迭代。恢复这份备份时，请使用
-`tianrking/jumper` 中记录的 `19e8f4d` 提交，不要直接改用较新的 `main`；
-压缩合并可能不保留原始提交。切换仓库时，使用新的运行时或克隆目录。
-
-`DOWNLOAD_FILES` 控制浏览器自动下载。关闭后，预览和文件仍可手动查看、下载。
-Drive 检查点快照为可选项，本次测试关闭了 Drive 挂载，尚未验证它。
-
-## Colab 实测
-
-流程已在 Tesla T4 上使用源码 `19e8f4d` 运行：五轮短训练检查、500 次主训练、
-视频回放、500 行关节测量、51 个标量标签和 25,500 个采样、ONNX 导出、ZIP
-备份、恢复，以及再训练五次迭代。此后 Notebook 更新了 imports、文档、上游默认入口和导出的任务/模型检查。
-
-这说明已测试任务的工作流程可用，不代表所有任务都已验证、行走策略已经收敛，
-或可以安全地在实体机器人上运行。参数说明和测试结果见
-[Colab 指南](../docs/COLAB.zh.md)。
+表单重排、提前读取备份设置和固定命令评估是后续改动；新版 Colab 验证另行记录在
+[完整指南](../docs/COLAB.zh.md#验证边界)中。

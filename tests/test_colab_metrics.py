@@ -121,6 +121,28 @@ def test_nonfinite_wall_time_still_fails_before_publishing(tmp_path, monkeypatch
     assert not output.exists()
 
 
+def test_progress_reports_latest_finite_curriculum_sample_without_inventing_missing_tags(
+    tmp_path, monkeypatch
+):
+    event_reader(monkeypatch, {
+        "Curriculum/command/level": [SimpleNamespace(step=4, wall_time=2, value=2.0),
+                                     SimpleNamespace(step=8, wall_time=3, value=3.0)],
+        "Curriculum/command/lin_err": [SimpleNamespace(step=7, wall_time=2, value=0.2),
+                                       SimpleNamespace(step=8, wall_time=3, value=float("nan"))],
+        "Curriculum/command/lin_err_bar": [SimpleNamespace(step=8, wall_time=3, value=0.08)],
+        "Curriculum/command/ang_range": [SimpleNamespace(step=8, wall_time=3, value=float("nan"))],
+        "Train/mean_reward": [SimpleNamespace(step=8, wall_time=3, value=7.0)],
+    })
+    output = tmp_path / "metrics.json"
+    result = colab.collect_metrics(run_events(tmp_path), output)
+    progress = result["progress"]
+    assert progress == json.loads(output.read_text())["progress"]
+    assert progress["Curriculum/command/level"] == {"step": 8, "wall_time": 3.0, "value": 3.0}
+    assert progress["Curriculum/command/lin_err"] == {"step": 7, "wall_time": 2.0, "value": 0.2}
+    assert set(progress) == {"Curriculum/command/level", "Curriculum/command/lin_err",
+                             "Curriculum/command/lin_err_bar"}
+
+
 @pytest.mark.parametrize("has_events", [False, True])
 def test_missing_events_or_empty_scalar_samples_fail_before_publishing(
     tmp_path, monkeypatch, has_events
@@ -141,6 +163,11 @@ def test_missing_events_or_empty_scalar_samples_fail_before_publishing(
       "Loss/surrogate", "Policy/mean_std", "Perf/total_fps"],
      ["Train/mean_reward", "Train/mean_episode_length", "Loss/value", "Loss/surrogate",
       "Policy/mean_std", "Perf/total_fps"]),
+    (["Train/mean_reward", "Train/mean_episode_length", "Loss/value", "Loss/surrogate",
+      "Policy/mean_std", "Perf/total_fps", "Curriculum/command/level",
+      "Curriculum/command/lin_err", "Curriculum/command/lin_err_bar"],
+     ["Train/mean_reward", "Train/mean_episode_length", "Loss/value", "Loss/surrogate",
+      "Policy/mean_std", "Perf/total_fps", "Curriculum/command/level", "Curriculum/command/lin_err"]),
 ])
 def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch, tags, expected):
     event_reader(monkeypatch, {
@@ -153,8 +180,13 @@ def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch, t
     axes = []
 
     class Axis:
-        def plot(self, x, y):
+        def plot(self, x, y, **kwargs):
             self.points = x, y
+            if kwargs:
+                self.labels_plotted = getattr(self, "labels_plotted", []) + [kwargs["label"]]
+
+        def legend(self):
+            self.legend_visible = True
 
         def set(self, **labels):
             self.labels = labels
@@ -200,6 +232,10 @@ def test_plot_uses_real_recorded_tags_and_closes_figure(tmp_path, monkeypatch, t
     assert axes[0].labels["ylabel"]
     assert closed == [figure]
     assert result["plotted_tags"] == expected
+    if "Curriculum/command/lin_err" in expected:
+        error_axis = axes[expected.index("Curriculum/command/lin_err")]
+        assert error_axis.labels_plotted == ["Measured error", "Promotion threshold"]
+        assert error_axis.legend_visible
 
 
 def saved_run(tmp_path):
@@ -209,7 +245,11 @@ def saved_run(tmp_path):
     with zipfile.ZipFile(checkpoint, "w") as archive:
         archive.writestr("model/data.pkl", "fixture")
     colab.atomic_json(run / colab.MANIFEST, {
-        "schema": 1, "checkpoints": {checkpoint.name: colab.sha256(checkpoint)}
+        "schema": 1, "checkpoints": {checkpoint.name: colab.sha256(checkpoint)},
+        "config": {"task": "robot.walk", "model": "robot", "num_envs": 256,
+                   "backend": "warp", "device": "cuda:0", "revision": "a" * 40,
+                   "source_sha256": "b" * 64, "runtime_versions": {"torch": "test"},
+                   "mjrl_environment": {}},
     })
     return run
 

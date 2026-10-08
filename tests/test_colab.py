@@ -326,7 +326,7 @@ def test_notebook_has_plain_python_cells_and_runs_repo_scripts_in_isolated_proce
     assert 'PYTHON, "scripts/play.py"' in source
     assert 'PYTHON, "scripts/export.py"' in source
     assert 'PYTHON, "-m", "mjrl.colab", "train"' in source
-    assert '"--iterations", "5"' in source and '"--num-envs", "256"' in source
+    assert '"--iterations", "5"' in source and 'str(min(NUM_ENVS, 256))' in source
     assert '"--backend", "warp", "--device", "cuda:0"' in source
     assert '"--physics-hz", "200"' in source
     assert '"--steps", "500"' in source
@@ -359,7 +359,10 @@ def notebook_cell(fragment):
 ])
 def test_notebook_form_refuses_unsafe_or_invalid_choices_before_setup(overrides):
     """A valid form is a control; reject edited parameters before any GPU subprocess."""
-    source = notebook_cell("CORE_VERSION_OVERRIDES =")
+    # Forms are separate; invalid values still have to stop before setup or replay.
+    sources = [notebook_cell("WORKFLOW_MODE ="),
+               notebook_cell("CORE_VERSION_OVERRIDES ="), notebook_cell("SIM_SECONDS =")]
+    source = "\n".join(sources)
     namespace = {}
     exec(compile(source, "valid_colab_form", "exec"), namespace)  # noqa: S102
     assert namespace["NUM_ENVS"] == 256 and namespace["SIM_SCENE"] == "task default"
@@ -377,7 +380,7 @@ def test_notebook_form_refuses_unsafe_or_invalid_choices_before_setup(overrides)
     ("task default", 0.0, False), ("ice", 1.4, True),
 ])
 def test_notebook_simulation_uses_control_time_and_records_the_selected_checkpoint(
-    tmp_path, scene, distance, measure
+    tmp_path, monkeypatch, scene, distance, measure
 ):
     """Changing recording FPS must not change control steps or the policy's physics rate."""
     session = tmp_path / "session"
@@ -394,10 +397,14 @@ def test_notebook_simulation_uses_control_time_and_records_the_selected_checkpoi
         commands.append(command)
         if "rates" in command:
             Path(command[command.index("--out") + 1]).write_text(
-                json.dumps({"physics_hz": 200.0, "control_hz": 50.0})
+                json.dumps({"physics_hz": 200.0, "control_hz": 50.0,
+                            "supports_velocity_command": True})
             )
         else:
             Path(command[command.index("--video") + 1]).write_bytes(b"new MP4")
+            Path(command[command.index("--replay-info-out") + 1]).write_text(
+                json.dumps({"command_ranges": {"status": "matched", "curriculum_level": 0}})
+            )
             if "--measure" in command:
                 directory = model.parent / "measure"
                 directory.mkdir()
@@ -411,17 +418,23 @@ def test_notebook_simulation_uses_control_time_and_records_the_selected_checkpoi
         "training": {"operation": "selected", "config": {"task": "robot.walk", "model": "robot"}},
         "SIM_SECONDS": 1.01, "SIM_FPS": 12.0, "SIM_WIDTH": 800, "SIM_HEIGHT": 600,
         "SIM_SCENE": scene, "SIM_CAMERA_DISTANCE": distance, "RECORD_JOINTS": measure,
+        "SIM_COMMAND": "Sampled commands",
         "run": run, "json": json, "math": __import__("math"), "shutil": __import__("shutil"),
         "uuid": __import__("uuid"),
         "display": lambda value: None, "Video": lambda *args, **kwargs: None,
         "Image": lambda **kwargs: None,
     }
+    monkeypatch.setitem(sys.modules, "IPython", SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "IPython.display", SimpleNamespace(
+        display=namespace["display"], Video=namespace["Video"], Image=namespace["Image"],
+    ))
     exec(compile(notebook_cell("SIM_STEPS ="), "record_simulation", "exec"), namespace)  # noqa: S102
     command = commands[-1]
     assert command[command.index("--steps") + 1] == "51"
     assert command[command.index("--physics-hz") + 1] == "200.0"
     assert command[command.index("--video-fps") + 1] == "12.0"
     assert command[command.index("--video-width") + 1] == "800"
+    assert "--checkpoint-command-ranges" in command
     assert "--measure" in command if measure else "--measure" not in command
     assert "--scene" not in command if scene == "task default" else command[
         command.index("--scene") + 1

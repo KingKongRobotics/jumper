@@ -28,4 +28,4 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest
 
       - name: Check layout, translations and Colab helpers
-        run: python -m pytest tests/test_layout.py tests/test_translations.py tests/test_colab.py tests/test_colab_metrics.py -q
+        run: python -m pytest tests/test_layout.py tests/test_translations.py tests/test_colab.py tests/test_colab_metrics.py tests/test_colab_backup_inspection.py tests/test_colab_notebook_workflow.py -q
