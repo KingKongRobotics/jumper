@@ -28,6 +28,7 @@ Delegate independent tasks and preserve required validation regardless of model 
 | Any code or documentation change | [`CLAUDE.md`](CLAUDE.md) — repository rules and architecture |
 | Set up or repair an environment | [`docs/AGENT_SETUP.md`](docs/AGENT_SETUP.md), then the `setup-env` skill |
 | Add a task | [`docs/USAGE.md`](docs/USAGE.md), then the `new-task` skill |
+| Train a policy and report it | [`docs/TUTORIAL.md`](docs/TUTORIAL.md), then the `train` skill |
 | Change controls | [`docs/CONTROLS.md`](docs/CONTROLS.md), then the `controls` skill |
 | Export or deploy a policy | [`deploy/README.md`](deploy/README.md), then the `deploy` skill |
 | Read or write a bundle consumer | [`deploy/BUNDLE.md`](deploy/BUNDLE.md) |
@@ -46,6 +47,7 @@ points at it.
 |---|---|
 | [`setup-env`](.claude/skills/setup-env/SKILL.md) | getting the Python environment and the controller's Rust toolchain running on a new machine, or repairing one that imports the wrong checkout, ignores the GPU or cannot build the controller |
 | [`new-task`](.claude/skills/new-task/SKILL.md) | creating a training task — its directory, registration, configs and operator controls |
+| [`train`](.claude/skills/train/SKILL.md) | training a policy and reporting it — sizing the run for the machine's backend, reading whether it learns, replaying it with the measurement on, and handing over a checkpoint with measured numbers rather than an assumed success |
 | [`controls`](.claude/skills/controls/SKILL.md) | giving a stick, a button or a key a meaning — a task's `controls.yaml`, a mode switch in `deploy/manifests.json`, a recorded motion's `go` |
 | [`deploy`](.claude/skills/deploy/SKILL.md) | taking a policy from a checkpoint to the robot — export, RKNN, the bundle, the cross-build, the board |
 | [`bundle-manual`](.claude/skills/bundle-manual/SKILL.md) | translating a built bundle's `manual.en.json` into Chinese and packing it into the `.app` — after every `scripts/deploy.py` build |

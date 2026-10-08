@@ -56,6 +56,10 @@ RUST_HINTS = (
     ("error while loading shared libraries",
      ("built, and the loader cannot find libddsc: sudo ldconfig, or add its lib/ to "
       "LD_LIBRARY_PATH")),
+    ("Library not loaded: @rpath/libddsc",
+     ("built, and the macOS loader cannot find libddsc: the crate writes its rpath from "
+      "$CYCLONEDDS_HOME at build time, so export it and rebuild (cargo clean -p mjrl-fsm), "
+      "or add its lib/ to DYLD_LIBRARY_PATH for one run")),
 )
 
 
@@ -146,9 +150,25 @@ class Gates:
                         detail + "  (GPU machine: cuda:0 required)",
                         "the driver or CUDA toolchain is wrong -- warp:cuda is unavailable.\n"
                         f"see 'torch.cuda.is_available() returns False' in section 6 of {DOC}")
+        elif self._warp_metal_installed():
+            # The `metal` extra is in this environment, so the overlay has to be
+            # active: it loads only beside the exact warp-lang it was built for,
+            # and otherwise Warp starts unmodified with a line on stderr -- which
+            # is a working CPU-only Warp and a silently missing GPU.
+            self.report("A  warp device enumeration", "metal:0" in devices,
+                        detail + "  (warp-metal installed: metal:0 required)",
+                        "warp-metal is installed and Warp lists no Metal device: the warp-lang "
+                        "version does not match the overlay's (python -c 'import warp_metal; "
+                        f"print(warp_metal.status())'), or macOS is older than 15. Section 1.6 of {DOC}")
         else:
             self.report("A  warp device enumeration", True,
                         detail + "  (no GPU: ['cpu'] alone is the expected result)")
+
+    @staticmethod
+    def _warp_metal_installed() -> bool:
+        import importlib.util
+
+        return importlib.util.find_spec("warp_metal") is not None
 
     @staticmethod
     def _nvidia_present() -> bool:

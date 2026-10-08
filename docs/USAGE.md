@@ -143,7 +143,7 @@ On Debian / Ubuntu, `ensurepip is not available` means venv is a separate packag
 | `--model <name\|path>` | task's default asset | Registered asset name, or a path to an `.xml` file |
 | `--list` | — | List tasks, their assets and the scenes, then exit |
 | `--backend {auto,warp,native}` | `auto` | Never falls back when explicit |
-| `--device <auto\|cuda:0\|cpu>` | `auto` | |
+| `--device <auto\|cuda:0\|cpu>` | `auto` | The torch device. On Apple Silicon with the `metal` extra, `cpu` with `--backend warp` simulates on the Apple GPU; `MJRL_SIM_DEVICE` / `MJRL_AGENT_DEVICE` in `.env` say where physics and learning go |
 | `--num_envs <n>` | train: `MJRL_NUM_ENVS` (4096 in the shipped `.env`); empty: warp 4096 / native 64. play: `MJRL_PLAY_NUM_ENVS`; empty: 1 | Train: **changes PPO's effective batch size**. Play: how many robots are on screen |
 | `--cpu_threads <n>` | `0` | Native threads; `0` = cores capped at 8, then by `num_envs`. **Not all cores** -- past ~8 the step is serial-bound and extra threads cost time |
 | `--strip-visual {auto,on,off}` | `auto` | Strip visual meshes on native; `auto` = once per-env models exceed 2 GiB |
@@ -925,7 +925,9 @@ MJRL_TERRAIN_COL=
 
 # -- backend and device --
 MJRL_BACKEND=auto          # auto | warp | native
-MJRL_DEVICE=auto           # auto | cuda:0 | cpu
+MJRL_DEVICE=auto           # auto | cuda:0 | cpu (the torch device; torch has no metal)
+MJRL_SIM_DEVICE=           # warp on cpu: where physics runs. Empty -> metal:0 if Warp lists one, else cpu
+MJRL_AGENT_DEVICE=         # simulation on metal:0: where the policy learns. Empty -> mps if torch has it
 MJRL_NUM_ENVS=             # training; empty -> per backend: warp 4096 / native 64
 MJRL_PLAY_NUM_ENVS=1       # play.py; empty -> 1. Not a batch size, so a key of its own
 MJRL_CPU_THREADS=0         # native thread count, 0 = cores capped at 8 (then by num_envs)
@@ -976,6 +978,8 @@ outside the set **errors** rather than falling back to the default:
 |---|---|
 | `MJRL_TENSORBOARD` | `on`/`off`, and `true`/`false`, `yes`/`no`, `1`/`0` |
 | `MJRL_BACKEND` | `auto`, `warp`, `native` |
+| `MJRL_SIM_DEVICE` | empty, `cpu`, `metal:0` (the last only where Warp lists it) |
+| `MJRL_AGENT_DEVICE` | empty, or a torch device such as `mps` or `cpu` |
 | `MJRL_STRIP_VISUAL` | `auto`, `on`, `off` |
 | `MJRL_NUM_ENVS`, `MJRL_PLAY_NUM_ENVS`, `MJRL_CPU_THREADS`, `MJRL_TB_PORT` | an integer |
 

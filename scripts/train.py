@@ -162,10 +162,14 @@ def _run(spec, res, asset: Path | None, args) -> None:
         env = ManagerBasedRlEnv(cfg=env_cfg, device=res.device)
         try:
             wrapped = RslRlVecEnvWrapper(env)
-            runner = runner_cls(wrapped, runner_kwargs, str(log_dir), res.device)
+            # The policy may learn on another torch device than the environment
+            # produces tensors on: `res.agent_device` is MPS on Apple Silicon when
+            # the simulation is on Metal, and `res.device` everywhere else. The
+            # runner copies observations across and hands actions back.
+            runner = runner_cls(wrapped, runner_kwargs, str(log_dir), res.agent_device)
             runner.add_git_repo_to_log(__file__)
             if ckpt is not None:
-                _resume(runner, ckpt, res.device, max_iterations)
+                _resume(runner, ckpt, res.agent_device, max_iterations)
             with maybe_viewer(env, args):
                 runner.learn(
                     num_learning_iterations=max_iterations,

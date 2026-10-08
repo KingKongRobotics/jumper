@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:a32832b3edf24a27 -->
+<!-- tracks: USAGE.md @ sha256:1bfa25ca3ae20213 -->
 
 # 手册
 
@@ -141,7 +141,7 @@ python -m pytest tests/ -q
 | `--model <name\|path>` | 任务的默认资产 | 已注册的资产名，或一个 `.xml` 文件的路径 |
 | `--list` | — | 列出任务、它们的资产和场景，然后退出 |
 | `--backend {auto,warp,native}` | `auto` | 显式指定时绝不回退 |
-| `--device <auto\|cuda:0\|cpu>` | `auto` | |
+| `--device <auto\|cuda:0\|cpu>` | `auto` | torch 设备。Apple Silicon 装了 `metal` extra 之后，`cpu` 配 `--backend warp` 会把仿真放到 Apple GPU 上；物理和学习各在哪里由 `.env` 里的 `MJRL_SIM_DEVICE` / `MJRL_AGENT_DEVICE` 决定 |
 | `--num_envs <n>` | train：`MJRL_NUM_ENVS`（随仓库发布的 `.env` 里是 4096）；为空时：warp 4096 / native 64。play：`MJRL_PLAY_NUM_ENVS`；为空时：1 | train：**会改变 PPO 的有效 batch size**。play：屏幕上有几台机器人 |
 | `--cpu_threads <n>` | `0` | native 的线程数；`0` = 核心数，上限 8，再受 `num_envs` 限制。**不是全部核心** —— 超过约 8 之后 step 受串行部分制约，多出来的线程只会增加耗时 |
 | `--strip-visual {auto,on,off}` | `auto` | 在 native 上剥离视觉网格；`auto` = 一旦每环境模型超过 2 GiB 就剥 |
@@ -806,7 +806,9 @@ MJRL_TERRAIN_COL=
 
 # -- 后端与设备 --
 MJRL_BACKEND=auto          # auto | warp | native
-MJRL_DEVICE=auto           # auto | cuda:0 | cpu
+MJRL_DEVICE=auto           # auto | cuda:0 | cpu（torch 设备；torch 没有 metal）
+MJRL_SIM_DEVICE=           # warp 配 cpu 时物理在哪算。留空 -> Warp 列出 metal:0 就用它，否则 cpu
+MJRL_AGENT_DEVICE=         # 仿真在 metal:0 时策略在哪学。留空 -> torch 有 mps 就用 mps
 MJRL_NUM_ENVS=             # 训练用；留空 -> 按后端定：warp 4096 / native 64
 MJRL_PLAY_NUM_ENVS=1       # play.py 用；留空 -> 1。它不是 batch size，所以单独一个键
 MJRL_CPU_THREADS=0         # native 的线程数，0 = 核心数，上限 8（再受 num_envs 限制）
@@ -848,6 +850,8 @@ Python 这一侧 —— 所以按 Amdahl 定律，并行的那部分在八个 wo
 |---|---|
 | `MJRL_TENSORBOARD` | `on`/`off`，以及 `true`/`false`、`yes`/`no`、`1`/`0` |
 | `MJRL_BACKEND` | `auto`、`warp`、`native` |
+| `MJRL_SIM_DEVICE` | 空、`cpu`、`metal:0`（最后一个只在 Warp 列出它时有效） |
+| `MJRL_AGENT_DEVICE` | 空，或一个 torch 设备，例如 `mps`、`cpu` |
 | `MJRL_STRIP_VISUAL` | `auto`、`on`、`off` |
 | `MJRL_NUM_ENVS`、`MJRL_PLAY_NUM_ENVS`、`MJRL_CPU_THREADS`、`MJRL_TB_PORT` | 一个整数 |
 

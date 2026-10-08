@@ -699,6 +699,87 @@ equivalent to one from `warp`.**
 See §6.3. Depth and segmentation are aligned closely enough to be used as references for one
 another; RGB with textures enabled is not.
 
+### 9.5 The Apple GPU is a third device, not a second CUDA
+
+Through [warp-metal](https://github.com/DavidDobas/warp-metal) -- a community overlay on one
+exact Warp release, with a four-file patch to mujoco_warp -- the warp backend simulates on
+Apple Silicon's GPU (`AGENT_SETUP.md` §1.6). It is the same mjwarp code and the same seam, and
+it is not the same device:
+
+- **torch has no Metal device.** The environment's tensors are CPU tensors aliasing the Warp
+  arrays in unified memory, which is why the resolution carries a `sim_device` beside `device`
+  (`metal:0` beside `cpu`) and why `Simulation` waits for the GPU after every launch
+  (`utils/sim_device.synchronize`): a CPU read before the kernels finish sees the previous step, with
+  no error anywhere. On CUDA the torch stream ordering does that job.
+- **No conditional graph nodes.** mjwarp's solver loop ends on a condition evaluated inside the
+  CUDA graph; Metal has no such node, so the solver runs its fixed iteration count
+  (`graph_conditional = False`). Same answer when converged, more work when converged early.
+- **No float64, and 64-bit atomics are not atomic.** mjwarp is float32 throughout, so the first
+  does not bite; the second is the overlay's own caveat and nothing here has measured it.
+- **Threadgroup memory, not FLOPs, is the limit.** The patch keeps one Cholesky tile per SIMD
+  group and drops the blocked factorisation up to 64 DoF, and the overlay's author notes the
+  gap to CUDA widens with the environment count. The measurement agrees:
+
+| `--num_envs` | policy on | env-steps / s | iteration | vs native (1850) | vs RTX 5090 |
+|---|---|---|---|---|---|
+| 256 | cpu | 1948 | 3.2 s | 1.05x | |
+| 1024 | mps | 3469 | 7.1 s | 1.9x | |
+| 4096 | mps | 5243 | 18.8 s | 2.8x | 48x slower (§10: 0.39 s) |
+
+M3 Max, macOS 26.5, `jumper.tripod`, 3 iterations, 2026-10-08; one sample each, and the two 4096
+runs differed in collection time by a factor of two. The policy learning on MPS is what makes
+the 4096 row: with it on the CPU, learning took 6.7 s of a 40.8 s iteration and collection the
+rest, which says the CPU side was contended, not that the GPU was.
+
+**The physics agrees with mjwarp's own CPU reference.** §9.3's measurement, repeated with three
+engines from one state -- eight worlds on a plane, dropped 5 cm with a seeded random `ctrl`, so
+the first 100 steps are free fall and the last 100 are landing (6 contacts, `qacc` 29 at step
+200). Maximum base-pose difference, M3 Max, 2026-10-08:
+
+| after | metal vs native | warp:cpu vs native | metal vs warp:cpu |
+|---|---|---|---|
+| `forward()`, `xpos` | 8.2e-07 | 7.8e-07 | 4.8e-07 |
+| 1 step (free fall) | 5.8e-09 | 5.8e-09 | **9.8e-13** |
+| 50 steps (free fall) | 1.4e-08 | 1.4e-08 | 1.2e-09 |
+| 200 steps (in contact) | 4.3e-04 | 4.3e-04 | **8.8e-06** |
+
+The third column is the control: the same kernels on two devices. In free fall they agree to
+float32 round-off; after landing they are 8.8e-6 apart, two orders of magnitude inside the
+4.3e-4 that separates either of them from native -- which is §9.3's residual (4–6e-4, float64
+against float32 in contact), unchanged by the device. So the Metal device computes what mjwarp
+computes, and whatever a policy trained here inherits from the simulator, it inherits from
+mjwarp rather than from Metal. The first attempt at this probe measured nothing: the bare
+`jumper.xml` has no floor (the scene adds it), the robot fell through, and `ncon` stayed 0 --
+the residuals were free fall all the way down. The plane, `ncon` and `qacc` are in the table
+because of that.
+
+**And the learning curves agree.** The same-seed comparison §9.3 asks for, between native and
+Metal: `jumper.tripod`, 64 environments, seed 42, 300 iterations each, the shipped
+hyper-parameters (which are the GPU recipe, so neither run is a good policy -- the point is that
+they are the same not-yet-good policy). M3 Max, 2026-10-08, native / Metal:
+
+| iteration | 50 | 100 | 150 | 200 | 299 (last 10 mean) |
+|---|---|---|---|---|---|
+| `Train/mean_reward` | -35.1 / -32.8 | -44.1 / -43.0 | -29.5 / -30.2 | -18.7 / -21.5 | -10.2 / -11.1 |
+| `Train/mean_episode_length` | 628 / 599 | 982 / 995 | 1000 / 1000 | 1000 / 1000 | 1000 / 1000 |
+| `Episode_Reward/track_linear_velocity` | 0.23 / 0.32 | 0.33 / 0.28 | 0.26 / 0.22 | 0.27 / 0.42 | 0.27 / 0.29 |
+| `Policy/mean_std` | 0.932 / 0.931 | 0.873 / 0.874 | 0.824 / 0.828 | 0.787 / 0.791 | 0.746 / 0.751 |
+
+Point-wise agreement was never the criterion (§9.3: a hexapod's contacts amplify any
+difference exponentially, and after 200 steps the two simulators are 4e-4 apart), and the
+per-iteration numbers do scatter -- the tracking term by up to 0.15 at one mark. The curves do
+not: the reward dips and recovers at the same iterations, both runs reach full-length episodes
+by iteration 150 with no falls, and the policy's noise decays along one line to three decimals.
+Whatever separates a native policy from a Metal one at 300 iterations is inside what separates
+two iterations of the same run. The run's own `Perf/` numbers are not quoted: the Metal run
+shared the machine with the residual probes above, which compile kernels for minutes, and its
+throughput reads 190 env-steps/s against the 1200 measured alone (§1.6 of `AGENT_SETUP.md`).
+
+**What has not been verified**: Metal against CUDA directly -- no CUDA machine was at hand --
+and anything past 300 iterations at 64 environments, which is where the GPU recipe would
+start to matter. A Metal checkpoint is still reported as a Metal checkpoint, which is what the
+banner's `sim=` and the resolution's note are for.
+
 ## 10. Collision geometry
 
 `jumper.xml` carries two geom sets side by side, `<body>_visual` for display and

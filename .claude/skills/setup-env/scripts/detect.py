@@ -54,11 +54,28 @@ def sh(cmd):
         return False, str(e)
 
 
+def metal_eligible(system, machine, release):
+    """Whether this machine can simulate on its Apple GPU: Apple Silicon on
+    macOS 15 or newer, which is what the warp-metal overlay needs. `release` is
+    the Darwin kernel version (`platform.release()`); Darwin 24 is macOS 15.
+
+    Eligibility, not presence: the overlay is the `metal` extra, installed per
+    environment, and gates.py is what checks it is actually loaded.
+    """
+    if system != "Darwin" or machine != "arm64":
+        return False
+    try:
+        return int(release.split(".")[0]) >= 24
+    except ValueError:
+        return False
+
+
 def detect_gpu():
     """(has_gpu, name, compute_cap). No nvidia-smi means no usable NVIDIA GPU.
 
     macOS is decided without asking: Apple Silicon has no CUDA and there is no
-    workaround, so a stray nvidia-smi there would be misleading.
+    workaround, so a stray nvidia-smi there would be misleading. Its own GPU is
+    a separate question, `metal_eligible`, and a separate backend.
     """
     if sys.platform == "darwin":
         return False, None, None
@@ -298,11 +315,29 @@ def device_commands(system, rust):
         return steps
     if rust["idlc"] and rust["dds_headers"]:
         return steps
+    src = "/tmp/cyclonedds"
+    if system == "Darwin":
+        # The same source build into a prefix of one's own: no sudo, nothing under
+        # /usr/local, and no ldconfig, which macOS does not have -- the crate writes
+        # the prefix's lib/ into the test binary's rpath from CYCLONEDDS_HOME
+        # instead, so the exports belong in the shell that runs cargo. Measured on
+        # an M3 Max on 2026-10-08 (section 2.2 of docs/AGENT_SETUP.md).
+        prefix = "$HOME/.local/opt/cyclonedds-%s" % CYCLONEDDS_TAG
+        return steps + [
+            "brew install cmake",
+            "git clone --depth 1 --branch %s https://github.com/eclipse-cyclonedds/cyclonedds.git %s"
+            % (CYCLONEDDS_TAG, src),
+            "cmake -S %s -B %s/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=%s"
+            " -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_IDLC=ON" % (src, src, prefix),
+            "cmake --build %s/build -j" % src,
+            "cmake --install %s/build" % src,
+            "export CYCLONEDDS_HOME=%s PATH=%s/bin:$PATH"
+            "    # in the shell that builds: the crate takes its rpath from it" % (prefix, prefix),
+        ]
     if system != "Linux":
         return steps + ["# CycloneDDS %s from source with cmake, CYCLONEDDS_HOME at its prefix,"
                 " idlc on PATH" % CYCLONEDDS_TAG,
-                "# -- section 2.2 of docs/AGENT_SETUP.md; measured on Linux only"]
-    src = "/tmp/cyclonedds"
+                "# -- section 2.2 of docs/AGENT_SETUP.md; measured on Linux and macOS only"]
     return steps + [
         "sudo apt install -y cmake git",
         "git clone --depth 1 --branch %s https://github.com/eclipse-cyclonedds/cyclonedds.git %s"
@@ -369,8 +404,15 @@ def main():
         print("  ! Install a 3.10-3.13 interpreter FIRST. Do not install dependencies")
         print("    on this one -- the failures come much later and read as unrelated.")
         print("    %s" % interpreter_advice(system))
-    print("  backends available here : %s" % ("warp:cuda (primary), native:cpu"
-                                              if has_gpu else "native:cpu"))
+    metal = metal_eligible(system, platform.machine(), platform.release())
+    print("  backends available here : %s" % (
+        "warp:cuda (primary), native:cpu" if has_gpu
+        else "warp on metal:0 (with the `metal` extra), native:cpu" if metal
+        else "native:cpu"))
+    if metal:
+        print("  apple gpu               : Apple Silicon on macOS 15+ -- the `metal` extra puts the")
+        print("                            simulation on it (section 1.6); measured 2.8x native:cpu")
+        print("                            at 4096 envs on an M3 Max, ~48x slower than an RTX 5090")
     if has_gpu:
         print("  prerequisite            : NVIDIA driver (nvidia-smi already answers, so it is present)")
     if system == "Windows":
@@ -409,6 +451,8 @@ def main():
     print("  %s" % activate)
     print("  %s" % cmd)
     print("  pip install -e .")
+    if metal:
+        print("  pip install -e \".[metal]\"    # the Apple GPU: warp-metal + the patched mujoco_warp (section 1.6)")
     steps = rust_commands(system, rust)
     print("\n  # the controller's toolchain (section 2.1)%s" % ("" if steps else
                                                           ": nothing missing"))

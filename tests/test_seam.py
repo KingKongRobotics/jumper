@@ -85,6 +85,16 @@ def test_seam_is_confined_to_two_files() -> None:
         # mj_ray and needs no BVH.
         "rl/mjlab/sensor/raycast_sensor.py",
         "rl/mjlab/sensor/sensor_context.py",
+        # ── The sim-device registry: which Warp device simulates ──
+        # Upstream takes the torch device's name. On Apple Silicon torch has
+        # no Metal device, so "cpu" tensors alias arrays that warp-metal
+        # simulates on metal:0; the registry beside the seam says so, and
+        # Simulation reads it where it picked its Warp device (plus a wait
+        # after each launch, because CPU tensors read unified memory
+        # directly). sim_data took every non-cpu array for a CUDA one.
+        "rl/mjlab/utils/sim_device.py",
+        "rl/mjlab/sim/sim.py",
+        "rl/mjlab/sim/sim_data.py",
         # ── Unrelated to the seam ──
         "rl/mjlab/rl/config.py",  # rsl_rl's symmetry field
     }

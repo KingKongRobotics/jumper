@@ -27,9 +27,16 @@ def use_backend(resolution: Resolution) -> None:
         ValueError: unknown backend name.
     """
     from mjlab.sim import set_simulation_cls
+    from mjlab.utils.sim_device import set_sim_device
 
     if resolution.backend == "warp":
         set_simulation_cls(None)
+        # Where physics runs. Upstream takes the torch device's name; on Apple
+        # Silicon the resolution says metal:0 for torch's "cpu", and this is
+        # the one place the vendored side learns that -- before the env is
+        # built, like the class above, because the construction reads it once.
+        set_sim_device(None if resolution.sim_device == resolution.device
+                       else resolution.sim_device)
     elif resolution.backend == "native":
         from .native_sim import (
             NativeSimulation,
@@ -38,6 +45,7 @@ def use_backend(resolution: Resolution) -> None:
         )
 
         set_simulation_cls(NativeSimulation)
+        set_sim_device(None)  # native never asks Warp for a device
         # The thread count is handed over here too. `NativeSimulation` is
         # constructed by the vendored manager_based_rl_env through
         # `get_simulation_cls()(...)`, whose signature is fixed and leaves no room

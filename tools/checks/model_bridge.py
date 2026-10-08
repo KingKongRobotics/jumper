@@ -21,7 +21,6 @@ other field should agree bit for bit.
 import gc, copy, sys
 
 import numpy as np
-import torch
 import tasks
 
 from mjlab.envs import ManagerBasedRlEnv
@@ -116,7 +115,7 @@ except Exception as e:
 
 print("\n=== memory per MjModel (decides whether this scales to large N) ===")
 try:
-    import pickle, resource
+    import resource
     m0 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     probes = [copy.deepcopy(mj_model) for _ in range(8)]
     m1 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
@@ -128,7 +127,7 @@ try:
 except Exception as e:
     print(f"  measurement failed: {type(e).__name__}: {e}")
 
-print(f"\n=== randomisation classification ===")
+print("\n=== randomisation classification ===")
 print(f"  no model copies needed: {DR_NO_MODEL_COPY}")
 print(f"  model copies required:  {DR_NEEDS_MODEL_COPIES}")
 print("\n" + ("all shapes agree" if not bad else f"{len(bad)} fields have "

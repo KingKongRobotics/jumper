@@ -244,7 +244,9 @@ class Observer:
         self.obs_joints = layout["obs_joint_order"]
         self.act_joints = layout["action_joint_order"]
         self.default = layout["default_joint_pos"]
-        jid = lambda n: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)
+        def jid(n):
+            return mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)
+
         self.obs_qadr = np.array([model.jnt_qposadr[jid(n)] for n in self.obs_joints])
         self.obs_dadr = np.array([model.jnt_dofadr[jid(n)] for n in self.obs_joints])
         self.obs_default = np.array([self.default[n] for n in self.obs_joints])

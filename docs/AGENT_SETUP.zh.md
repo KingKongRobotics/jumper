@@ -1,4 +1,4 @@
-<!-- tracks: AGENT_SETUP.md @ sha256:d29f24b5f73ee4a1 -->
+<!-- tracks: AGENT_SETUP.md @ sha256:4728f653aab7343c -->
 
 # 环境搭建说明（写给 AI agent）
 
@@ -57,7 +57,8 @@ nvidia-smi --query-gpu=name,memory.total,compute_cap --format=csv,noheader
 | Linux | 无 | 1.1 – 1.3 | `native:cpu` |
 | Windows | 有 | 1.1 – 1.5 | `warp:cuda`、`native:cpu` |
 | Windows | 无 | 1.1 – 1.3、**1.5** | `native:cpu` |
-| macOS | ——（没有 CUDA，没有例外） | 1.1 – 1.3 | `native:cpu` |
+| macOS，Apple Silicon | ——（没有 CUDA，没有例外） | 1.1 – 1.3、**1.6** | `native:cpu`；做了 1.6 之后，warp 把仿真放在 Apple GPU 上 |
+| macOS，Intel | —— | 1.1 – 1.3 | `native:cpu` |
 
 每一行还都要做 2.1 和 2.2，也就是控制器的工具链，它不按有没有 GPU 分叉。
 
@@ -145,7 +146,43 @@ pip install torch torchvision
 ```
 
 > **`warp:cuda` 在 macOS 上确定不可用**（Apple Silicon 没有 CUDA，没有例外）。那里的 CPU
-> 训练走 `native:cpu` 后端，它完全不需要 CUDA。
+> 训练走 `native:cpu` 后端，它完全不需要 CUDA。Apple 自己的 GPU 是另一回事：1.6 通过
+> warp-metal 把仿真放到它上面，张量仍然留在 CPU。
+
+### 1.6 macOS：通过 warp-metal 用 Apple GPU
+
+[warp-metal](https://github.com/DavidDobas/warp-metal) 是社区做的覆盖层，给 NVIDIA Warp 加了一个
+`metal:0` 设备；它的作者还维护着一份对 mujoco_warp 3.11.0 的四文件补丁，让它的 kernel 能在
+CUDA 之外跑。两者都不在 PyPI 上；`metal` extra 用 URL 把两者钉死，wheel 还钉了摘要，并钉住覆盖
+层所针对的那个精确的 `warp-lang` 版本 —— 两个版本必须一致，否则 Warp 会原样加载，只在 stderr
+打一行，然后给你一个只有 CPU、而且能正常工作的 Warp，这正是 gate A 存在的理由那种静默失败。
+
+Apple Silicon、macOS 15 或更新，做完第 2 节之后：
+
+```bash
+pip install -e ".[metal]"
+python -c "import warp as wp; wp.init(); print(wp.get_devices())"   # ['cpu', 'metal:0']
+```
+
+torch 没有 Metal 设备，所以 torch 这一侧什么都不变：环境的张量是 `cpu` 张量，通过统一内存直接
+别名到 Warp 的数组；`resolve()` 在 `--backend warp --device cpu` 时把仿真放到 `metal:0` ——
+这也是 `--backend auto` 在这种机器上选出来的结果。banner 会写 `sim=metal:0`，torch 有 MPS 时还会
+写 `agent=mps`，策略就在那里学。`MJRL_SIM_DEVICE=cpu` 让仿真不上 GPU（warp 的串行 cpu 设备，
+也就是调试路径）；`MJRL_AGENT_DEVICE=cpu` 让策略留在 CPU 上。
+
+2026-10-08 在一台 M3 Max（macOS 26.5，64 GB）上实测，`jumper.tripod`，3 轮迭代：
+
+| `--num_envs` | 策略在 | env-steps / s | 每轮迭代 |
+|---|---|---|---|
+| 64 | cpu | 1200 | 1.3 s |
+| 256 | cpu | 1948 | 3.2 s |
+| 1024 | cpu / mps | 3223 / 3469 | 7.6 / 7.1 s |
+| 4096 | cpu / mps | 2407 / 5243 | 40.8 / 18.8 s |
+
+对比同一台机器上 `native:cpu` 的上限 1850 env-steps/s，4096 个环境时是 2.8 倍；对比
+`DESIGN.md` §10 里的 RTX 5090（4096 个环境每轮 0.39 s），慢约 48 倍。每个数字只有一次采样 ——
+两次 4096 的采集时间差了一倍。Metal 上训出来的策略是否与 CUDA 的一致没有验证过；已知的部分
+写在 `DESIGN.md` §9.5。
 
 ### 1.4 GPU 机器的系统前置：NVIDIA 驱动
 
@@ -276,9 +313,30 @@ sudo cmake --install /tmp/cyclonedds/build && sudo ldconfig
 的一致。**`sudo ldconfig` 不能省**：`/usr/local/lib` 是通过加载器的缓存查找的，没有它，测试
 二进制能链接却启动不了 —— 这正是 gate F 要把它跑起来、而不只是编出来的原因。
 
-其他平台是同样的源码构建：把 `CYCLONEDDS_HOME` 设成安装前缀，并把它的 `bin/` 放到 `PATH` 上
-（`idlc` 从 `PATH` 找，头文件和库从 `CYCLONEDDS_HOME` 找）。bindgen 在 macOS 上从 Xcode 命令
-行工具里找 libclang，在 Windows 上需要装 LLVM（`LIBCLANG_PATH`）。**只在 Linux 上实测过。**
+macOS 上是同样的源码构建，但装进你自己的前缀 —— 不碰 `/usr/local`，不用 `sudo`，也没有
+`ldconfig`（macOS 根本没有这个东西）。crate 会在构建时把 `CYCLONEDDS_HOME` 下的 `lib/` 写进测试
+二进制自己的 rpath，所以下面两行 `export` 必须在跑 `cargo` 和 `gates.py` 的那个 shell 里生效，
+而不只是在安装时的那个：
+
+```bash
+brew install cmake
+git clone --depth 1 --branch 11.0.1 https://github.com/eclipse-cyclonedds/cyclonedds.git /tmp/cyclonedds
+cmake -S /tmp/cyclonedds -B /tmp/cyclonedds/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.local/opt/cyclonedds-11.0.1 -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_IDLC=ON
+cmake --build /tmp/cyclonedds/build -j
+cmake --install /tmp/cyclonedds/build
+export CYCLONEDDS_HOME=$HOME/.local/opt/cyclonedds-11.0.1
+export PATH=$CYCLONEDDS_HOME/bin:$PATH
+```
+
+bindgen 从 Xcode 命令行工具里找 libclang。2026-10-08 在一台 M3 Max（Darwin 25.5，cargo
+1.95.0）上实测：构建约两分钟，gate F 列出 195 个测试，`deploy/fsm` 里 `cargo test --lib` 全部
+通过。在 `export CYCLONEDDS_HOME` 之前构建出来的测试二进制没有 rpath，会以
+`Library not loaded: @rpath/libddsc.11.dylib` 中止；重新构建它（`cargo clean -p mjrl-fsm`），
+不必重装 CycloneDDS。
+
+Windows 上是同样的源码构建：把 `CYCLONEDDS_HOME` 设成安装前缀，把它的 `bin/` 放到 `PATH` 上
+（`idlc` 从 `PATH` 找，头文件和库从 `CYCLONEDDS_HOME` 找），bindgen 需要装 LLVM
+（`LIBCLANG_PATH`）。**没有实测过。**
 
 **Rockchip 的 NPU 头文件是唯一一样按 checkout 拉取、而不是按机器安装的东西。** `build.rs` 还会针对
 `deploy/fsm/vendor/rknpu2/include/rknn_api.h` 编译一个探针，而这个头文件属于 Rockchip，不提交进
@@ -315,6 +373,11 @@ python -c "import warp as wp; wp.init(); print(wp.get_devices())"
 只看到 `['cpu']` 是失败：驱动或者 CUDA 工具链有问题，`warp:cuda` 后端不可用。
 
 **在没有 GPU 的机器上**：只有 `['cpu']` 就是**预期**结果，不是失败。
+
+**在装了 `metal` extra 的 Apple Silicon 上**（1.6）：列表必须是 `['cpu', 'metal:0']`。只有
+`['cpu']` 说明覆盖层没加载 —— 装的 `warp-lang` 不是它所针对的版本
+（`python -c "import warp_metal; print(warp_metal.status())"` 会说），或者 macOS 低于 15。
+`gates.py` 会检查 `warp_metal` 是否装了，装了就要求这个设备出现。
 
 ### Gate B —— 原生 MuJoCo 的多线程批量接口
 
@@ -558,6 +621,13 @@ python assets/jumper/tools/build_jumper.py
 编译、链接都过了，但加载器找不到这个库。**补救**：装进 `/usr/local` 之后执行
 `sudo ldconfig`，或者把 CycloneDDS 的 `lib/` 加进 `LD_LIBRARY_PATH`。
 
+### macOS：`Library not loaded: @rpath/libddsc.11.dylib`
+
+同一种失败换到 macOS 的加载器上，而它没有缓存可刷新：测试二进制的 rpath 取自构建时的
+`CYCLONEDDS_HOME`，这个二进制要么是在 `export` 之前构建的，要么指向了另一个前缀。**补救**：按
+2.2 `export CYCLONEDDS_HOME` 后重新构建（`cargo clean -p mjrl-fsm`）；把 `DYLD_LIBRARY_PATH`
+指到前缀的 `lib/` 可以不重建地跑过一次。
+
 ---
 
 ## 7. 绝对不要做的事
@@ -569,8 +639,11 @@ python assets/jumper/tools/build_jumper.py
    `mujoco 3.10`，两者会互相破坏。每次 `pip` 之前，用 1.2 的验证确认 `sys.prefix` 指向仓库
    的 `.venv`。
 4. **绝不试图让 `warp:cuda` 在 macOS 上跑起来** —— 这个平台没有 CUDA，也没有绕过的办法。
-5. **绝不用 `warp:cpu` 训练** —— 它把 kernel 编译成 CPU 代码并串行执行，官方定位就是调试用
-   的。用 `native:cpu`，它大约快 30×。
+   Apple GPU 走的是 warp-metal（1.6），那是另一个设备、另一个后端，不是 CUDA。
+5. **绝不用 warp 的串行 cpu 设备训练** —— 它把 kernel 编译成 CPU 代码并串行执行，官方定位就
+   是调试用的。用 `native:cpu`，它大约快 30×。`--backend warp --device cpu` 只有在仿真也在
+   cpu 上时才是这条路：Apple Silicon 装了 `metal` extra 之后它在 `metal:0` 上仿真，banner 里
+   的 `sim=` 会说明是哪一种。
 6. **绝不在没有 marker 的情况下改 `rl/mjlab/` 或 `rl/rsl_rl/`** —— 见
    [`VENDOR.md`](VENDOR.md)：每一处改动都必须带 `# [mjrl] reason: …`，否则和上游同步时就找
    不回来了。

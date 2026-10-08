@@ -218,3 +218,30 @@ def test_only_the_missing_rust_steps_are_printed() -> None:
     # case above is the control.
     assert detect.device_commands("Linux", _complete_rust(npu_header=False)) == [
         "bash deploy/fsm/vendor/rknpu2/fetch.sh    # Rockchip's NPU header, once per checkout"]
+
+    # macOS gets a measured procedure of its own rather than the "measured on
+    # Linux only" comment it used to: a source build into a prefix under $HOME,
+    # with no sudo and no ldconfig (the crate writes its rpath instead), and the
+    # exports the build takes the rpath from. The complete case is the control
+    # again: a machine with everything is told nothing on this platform too.
+    assert detect.device_commands("Darwin", _complete_rust()) == []
+    mac = detect.device_commands("Darwin", _complete_rust(idlc=None, idlc_text=None,
+                                                          dds_headers=False))
+    assert not any("sudo" in step or "ldconfig" in step for step in mac), mac
+    assert any("CMAKE_INSTALL_PREFIX=$HOME/" in step for step in mac), mac
+    assert any(step.startswith("export CYCLONEDDS_HOME=$HOME/") for step in mac), mac
+
+
+def test_metal_eligibility_is_apple_silicon_on_macos_15_or_newer() -> None:
+    """The Apple GPU is a backend only through the warp-metal overlay, which
+    needs Apple Silicon and macOS 15 (Darwin 24). Eligibility is decided from
+    the machine, not from what is installed: the overlay is per environment and
+    gates.py checks that it loaded. The Linux and Intel rows are the control.
+    """
+    detect = _load("detect")
+    assert detect.metal_eligible("Darwin", "arm64", "25.5.0") is True
+    assert detect.metal_eligible("Darwin", "arm64", "24.0.0") is True
+    assert detect.metal_eligible("Darwin", "arm64", "23.6.0") is False, "macOS 14"
+    assert detect.metal_eligible("Darwin", "x86_64", "25.5.0") is False, "Intel Mac"
+    assert detect.metal_eligible("Linux", "aarch64", "6.8.0") is False
+    assert detect.metal_eligible("Darwin", "arm64", "unknown") is False
