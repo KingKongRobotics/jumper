@@ -1,4 +1,4 @@
-<!-- tracks: AGENT_SETUP.md @ sha256:d29f24b5f73ee4a1 -->
+<!-- tracks: AGENT_SETUP.md @ sha256:10f9f79be9be42ae -->
 
 # 环境搭建说明（写给 AI agent）
 
@@ -276,9 +276,30 @@ sudo cmake --install /tmp/cyclonedds/build && sudo ldconfig
 的一致。**`sudo ldconfig` 不能省**：`/usr/local/lib` 是通过加载器的缓存查找的，没有它，测试
 二进制能链接却启动不了 —— 这正是 gate F 要把它跑起来、而不只是编出来的原因。
 
-其他平台是同样的源码构建：把 `CYCLONEDDS_HOME` 设成安装前缀，并把它的 `bin/` 放到 `PATH` 上
-（`idlc` 从 `PATH` 找，头文件和库从 `CYCLONEDDS_HOME` 找）。bindgen 在 macOS 上从 Xcode 命令
-行工具里找 libclang，在 Windows 上需要装 LLVM（`LIBCLANG_PATH`）。**只在 Linux 上实测过。**
+macOS 上是同样的源码构建，但装进你自己的前缀 —— 不碰 `/usr/local`，不用 `sudo`，也没有
+`ldconfig`（macOS 根本没有这个东西）。crate 会在构建时把 `CYCLONEDDS_HOME` 下的 `lib/` 写进测试
+二进制自己的 rpath，所以下面两行 `export` 必须在跑 `cargo` 和 `gates.py` 的那个 shell 里生效，
+而不只是在安装时的那个：
+
+```bash
+brew install cmake
+git clone --depth 1 --branch 11.0.1 https://github.com/eclipse-cyclonedds/cyclonedds.git /tmp/cyclonedds
+cmake -S /tmp/cyclonedds -B /tmp/cyclonedds/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.local/opt/cyclonedds-11.0.1 -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_IDLC=ON
+cmake --build /tmp/cyclonedds/build -j
+cmake --install /tmp/cyclonedds/build
+export CYCLONEDDS_HOME=$HOME/.local/opt/cyclonedds-11.0.1
+export PATH=$CYCLONEDDS_HOME/bin:$PATH
+```
+
+bindgen 从 Xcode 命令行工具里找 libclang。2026-10-08 在一台 M3 Max（Darwin 25.5，cargo
+1.95.0）上实测：构建约两分钟，gate F 列出 195 个测试，`deploy/fsm` 里 `cargo test --lib` 全部
+通过。在 `export CYCLONEDDS_HOME` 之前构建出来的测试二进制没有 rpath，会以
+`Library not loaded: @rpath/libddsc.11.dylib` 中止；重新构建它（`cargo clean -p mjrl-fsm`），
+不必重装 CycloneDDS。
+
+Windows 上是同样的源码构建：把 `CYCLONEDDS_HOME` 设成安装前缀，把它的 `bin/` 放到 `PATH` 上
+（`idlc` 从 `PATH` 找，头文件和库从 `CYCLONEDDS_HOME` 找），bindgen 需要装 LLVM
+（`LIBCLANG_PATH`）。**没有实测过。**
 
 **Rockchip 的 NPU 头文件是唯一一样按 checkout 拉取、而不是按机器安装的东西。** `build.rs` 还会针对
 `deploy/fsm/vendor/rknpu2/include/rknn_api.h` 编译一个探针，而这个头文件属于 Rockchip，不提交进
@@ -557,6 +578,13 @@ python assets/jumper/tools/build_jumper.py
 
 编译、链接都过了，但加载器找不到这个库。**补救**：装进 `/usr/local` 之后执行
 `sudo ldconfig`，或者把 CycloneDDS 的 `lib/` 加进 `LD_LIBRARY_PATH`。
+
+### macOS：`Library not loaded: @rpath/libddsc.11.dylib`
+
+同一种失败换到 macOS 的加载器上，而它没有缓存可刷新：测试二进制的 rpath 取自构建时的
+`CYCLONEDDS_HOME`，这个二进制要么是在 `export` 之前构建的，要么指向了另一个前缀。**补救**：按
+2.2 `export CYCLONEDDS_HOME` 后重新构建（`cargo clean -p mjrl-fsm`）；把 `DYLD_LIBRARY_PATH`
+指到前缀的 `lib/` 可以不重建地跑过一次。
 
 ---
 
