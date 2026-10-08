@@ -173,16 +173,32 @@ def test_the_mirror_of_a_posture_is_the_posture_of_the_mirror() -> None:
     # the permutation `symmetry.LEG_PERM` carries for per-foot quantities.
     from tasks.jumper.common.mdp.symmetry import LEG_PERM
 
+    flip = torch.tensor([1.0, -1.0])
     twisted = _footprint(math.radians(10.0))
-    mirrored = twisted[LEG_PERM] * torch.tensor([1.0, -1.0])
-    # 1e-4 rather than the 1e-5 the other tests use: the robot's own footprint is
-    # not exactly mirror symmetric (LF sits at y = 0.0728 against RF's 0.072607,
-    # 0.2 mm apart), so mirroring a twisted footprint and re-fitting it lands
-    # 6e-5 rad -- 0.003 degrees -- from the exact negation. That is the model's
-    # asymmetry, not the estimator's error, and a tolerance tight enough to
-    # object to it would be pinning the URDF's rounding.
-    assert twist_from_footprint(mirrored).item() == pytest.approx(
-        -math.radians(10.0), abs=1e-4
+    mirrored = twisted[LEG_PERM] * flip
+    # The robot's own footprint is not exactly mirror symmetric -- LF stands at
+    # (0.1871, 0.0728) against RF's (0.1836, -0.0690), 3.5 mm apart fore-aft --
+    # so the mirror of the *nominal* footprint already reads as a twist: 1.68e-3
+    # rad, 0.096 degrees, off `NOMINAL_FOOT_XY` on 2026-10-08. That is the
+    # model's asymmetry, not the estimator's error, and a tolerance tight enough
+    # to object to it pins the URDF's rounding -- which this test did, at 1e-4,
+    # written against an earlier model whose feet sat 0.2 mm apart, and it
+    # failed the day the model moved while the estimator had not changed.
+    #
+    # So the control group is the mirrored nominal footprint itself: what the
+    # estimator reads off it is the model's bias, and the mirror of a twist has
+    # to land exactly minus the twist away from that bias (6e-8 rad, measured
+    # from -45 to 45 degrees). The bias is still bounded, separately, so a model
+    # that stops being nearly symmetric is a failure here and not a silent shift
+    # of every mirrored training sample.
+    bias = twist_from_footprint(_footprint(0.0)[LEG_PERM] * flip).item()
+    assert abs(bias) < math.radians(0.5), (
+        f"the mirrored nominal footprint reads {math.degrees(bias):.3f} degrees of "
+        f"twist; the model's left-right asymmetry is no longer small enough to call "
+        f"rounding, and every mirrored sample carries it"
+    )
+    assert twist_from_footprint(mirrored).item() - bias == pytest.approx(
+        -math.radians(10.0), abs=1e-5
     )
 
 
