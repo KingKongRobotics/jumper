@@ -3,7 +3,7 @@ instead of guesswork.
 
 Usage: python tools/checks/warp_dims.py
 """
-import numpy as np, torch
+import numpy as np
 import tasks
 
 from mjlab.envs import ManagerBasedRlEnv

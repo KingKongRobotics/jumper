@@ -506,7 +506,8 @@ def test_pump_power_pays_for_pumping_and_charges_for_damping() -> None:
     # could farm the shaping term by rocking the seat along the beam.
     rel = torch.tensor([[0.0, 0.0, -1.36]])
     denom = (rel[:, 0] ** 2 + rel[:, 2] ** 2).clamp(min=1e-6)
-    rate = lambda v: float((rel[:, 2] * v[:, 0] - rel[:, 0] * v[:, 2]) / denom)
+    def rate(v):
+        return float((rel[:, 2] * v[:, 0] - rel[:, 0] * v[:, 2]) / denom)
 
     assert rate(torch.tensor([[1.0, 0.0, 0.0]])) < 0.0
     assert rate(torch.tensor([[-1.0, 0.0, 0.0]])) > 0.0

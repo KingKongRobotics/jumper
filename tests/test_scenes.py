@@ -367,7 +367,7 @@ def test_the_sun_in_the_sky_matches_the_sun_that_lights_the_scene() -> None:
                 if ln.startswith("SUN = "))
     towards = ast.literal_eval(line.split("np.array(", 1)[1].rstrip(")"))
 
-    sun_light = next(l for l in scenes.load("beach").lights if l.name == "sun")
+    sun_light = next(light for light in scenes.load("beach").lights if light.name == "sun")
     travels = sun_light.dir
 
     for a, b in zip(towards, travels, strict=True):

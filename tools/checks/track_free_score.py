@@ -19,7 +19,7 @@ So rerun this after changing std or the command ranges, and look at two things:
 Usage: python tools/checks/track_free_score.py
 """
 
-import torch, numpy as np
+import torch
 import tasks
 
 from mjlab.envs import ManagerBasedRlEnv
@@ -63,7 +63,7 @@ print(f"{'free total':<24}{'':>12}{r_lin.mean()*w_lin + r_ang.mean()*w_ang:>10.4
 print(f"{'maximum total':<24}{'':>12}{w_lin + w_ang:>10.4f}")
 print(f"\nfree score is {(r_lin.mean()*w_lin + r_ang.mean()*w_ang)/(w_lin+w_ang)*100:.1f}% of the maximum")
 
-print(f"\nmeasured reference (final values from training runs)")
+print("\nmeasured reference (final values from training runs)")
 print("-" * 56)
 for lbl, ang, lin in [("soft reward w2.0 @1577", 1.3390, 0.3850),
                       ("bound w1.0 @541",       None,   1.1303),
@@ -86,7 +86,7 @@ print('bucketed by command magnitude '
       '(the overall mean is diluted by zero commands, so buckets are essential)')
 print('='*68)
 
-import sys, torch
+import torch
 cfg = tasks.load_env_cfg("jumper.tetrapod", play=False)
 cfg.scene.num_envs = 2048
 env = ManagerBasedRlEnv(cfg=cfg, device="cuda:0")
