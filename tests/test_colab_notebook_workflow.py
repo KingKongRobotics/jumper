@@ -311,6 +311,7 @@ def test_early_reader_rejects_a_nul_truncated_zip_name(tmp_path):
 @pytest.mark.parametrize("environment", [
     {"HOME": "/not-allowed"}, {"MJRL_lowercase": "1"}, {"MJRL_": "1"},
     {"MJRL_TASK": 1}, {"MJRL_TASK": "x" * 4097},
+    {"MJRL_TASK": "invalid\0environment"},
     {f"MJRL_KEY_{index}": "1" for index in range(101)}, [],
 ])
 def test_manifest_environment_accepts_only_bounded_mjrl_strings(environment):
@@ -346,7 +347,9 @@ def test_continuation_bootstrap_restores_only_mjrl_environment(monkeypatch):
     assert environment["__EGL_VENDOR_LIBRARY_FILENAMES"] == "preserved-egl"
 
 
-@pytest.mark.parametrize("bad_selection", ["boolean-schema", "foreign-environment", "truncated-name"])
+@pytest.mark.parametrize("bad_selection", [
+    "boolean-schema", "foreign-environment", "nul-environment", "truncated-name",
+])
 def test_invalid_replacement_upload_keeps_the_existing_verified_selection(
     tmp_path, external_ui, monkeypatch, bad_selection
 ):
@@ -361,6 +364,8 @@ def test_invalid_replacement_upload_keeps_the_existing_verified_selection(
         invalid["schema"] = True
     elif bad_selection == "foreign-environment":
         invalid["config"]["mjrl_environment"] = {"HOME": "not-a-training-setting"}
+    elif bad_selection == "nul-environment":
+        invalid["config"]["mjrl_environment"] = {"MJRL_TASK": "invalid\0environment"}
     archive = tmp_path / "replacement.zip"
     with zipfile.ZipFile(archive, "w") as output:
         output.writestr("run/colab-run.json", json.dumps(invalid))
@@ -502,3 +507,123 @@ def test_failed_run_backup_works_without_fresh_runtime_or_egl_metadata(tmp_path,
     restored = colab.restore_backup(namespace["BACKUP_ZIP"], tmp_path / "verified-restore")
     assert restored.read_bytes() == checkpoint.read_bytes()
     assert external_ui.downloads == []
+
+
+def test_backup_after_a_second_run_fails_selects_that_runs_saved_checkpoint(
+    tmp_path, external_ui
+):
+    """A failed second run leaves old Python globals; its manifest must select the new save."""
+    first_checkpoint, first_manifest = saved_run(tmp_path / "successful-A")
+    second_checkpoint, second_manifest = saved_run(tmp_path / "interrupted-B")
+    first_manifest.update(status="finished", operation="run-A")
+    second_manifest.update(status="failed", operation="run-B")
+    session = tmp_path / "session"
+    session.mkdir()
+    for name in ("runtime.json", "graphics.json"):
+        (session / name).write_text("{}")
+    namespace = settings()
+    namespace.update(SESSION=session, REPO=tmp_path, PYTHON=tmp_path / "python",
+                     TASK="jumper.ripple", NUM_ENVS=64, PERSIST_ROOT=None, DOWNLOAD_FILES=False)
+
+    def first_run(command, **kwargs):
+        colab.atomic_json(Path(command[command.index("--manifest") + 1]), first_manifest)
+
+    namespace["run"] = first_run
+    execute('TRAIN_MANIFEST = SESSION / "training.json"', namespace)
+    assert namespace["CHECKPOINT_PATH"] == first_checkpoint
+
+    def interrupted_run(command, **kwargs):
+        colab.atomic_json(Path(command[command.index("--manifest") + 1]), second_manifest)
+        raise RuntimeError("second run interrupted after saving a complete checkpoint")
+
+    namespace["run"] = interrupted_run
+    with pytest.raises(RuntimeError, match="second run interrupted"):
+        execute('TRAIN_MANIFEST = SESSION / "training.json"', namespace)
+    assert namespace["CHECKPOINT_PATH"] == first_checkpoint  # Prove the stale-global trigger.
+
+    def backup(command, **kwargs):
+        colab.create_backup(Path(command[command.index("--run") + 1]),
+                            Path(command[command.index("--out") + 1]),
+                            extras=Path(command[command.index("--extras") + 1]))
+
+    namespace["run"] = backup
+    execute("BACKUP_CHECKPOINT =", namespace)
+    assert namespace["CHECKPOINT_PATH"] == second_checkpoint
+    assert namespace["RUN_DIR"] == second_checkpoint.parent
+    assert namespace["ARTIFACTS"] == session / "artifacts/run-B"
+    restored = colab.restore_backup(namespace["BACKUP_ZIP"], tmp_path / "restore-B")
+    recovered = json.loads((restored.parent / colab.MANIFEST).read_text())
+    assert recovered["run_directory"] == str(second_checkpoint.parent)
+
+
+@pytest.mark.parametrize("operation", ["replay", "evaluation"])
+def test_stale_checkpoint_replay_and_evaluation_fail_before_subprocess(
+    tmp_path, external_ui, operation
+):
+    old_checkpoint, _ = saved_run(tmp_path / "old")
+    selected_checkpoint, manifest = saved_run(tmp_path / "selected")
+    selected_manifest = tmp_path / "training.json"
+    colab.atomic_json(selected_manifest, manifest)
+    namespace = settings()
+    namespace.update(TASK=manifest["config"]["task"], MODEL=manifest["config"]["model"],
+                     CHECKPOINT_PATH=old_checkpoint, training=manifest, TRAIN_MANIFEST=selected_manifest,
+                     RUN_EVALUATION=True, rates={"supports_velocity_command": True},
+                     run=lambda *args, **kwargs: pytest.fail("Stale checkpoint reached subprocess"))
+    with pytest.raises(ValueError, match="checkpoint must match the selected training manifest"):
+        execute("SIM_STEPS =" if operation == "replay" else "# @title Fixed-command evaluation", namespace)
+    assert selected_checkpoint.is_file() and old_checkpoint.is_file()
+
+
+@pytest.mark.parametrize("changed", [{"TASK": "jumper.flat"}, {"MODEL": "different-robot"}])
+def test_evaluation_rejects_other_task_or_model_before_subprocess(tmp_path, external_ui, changed):
+    checkpoint, manifest = saved_run(tmp_path / "selected")
+    selected_manifest = tmp_path / "training.json"
+    colab.atomic_json(selected_manifest, manifest)
+    namespace = settings()
+    namespace.update(TASK=manifest["config"]["task"], MODEL=manifest["config"]["model"],
+                     CHECKPOINT_PATH=checkpoint, TRAIN_MANIFEST=selected_manifest,
+                     RUN_EVALUATION=True, rates={"supports_velocity_command": True},
+                     run=lambda *args, **kwargs: pytest.fail("Wrong task/model reached subprocess"))
+    namespace.update(changed)
+    with pytest.raises(ValueError, match="Evaluation task/model must match"):
+        execute("# @title Fixed-command evaluation", namespace)
+
+
+def test_matching_evaluation_control_executes_all_four_cases_with_selected_checkpoint(
+    tmp_path, external_ui
+):
+    """The evaluation gates must reject mismatches without blocking legitimate evaluation."""
+    checkpoint, manifest = saved_run(tmp_path / "selected")
+    selected_manifest = tmp_path / "training.json"
+    colab.atomic_json(selected_manifest, manifest)
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    namespace = settings()
+    execute("# @title Simulation and evaluation settings", namespace)
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        Path(command[command.index("--evaluation-out") + 1]).write_text(json.dumps({
+            "tracking_error": 0.02, "checkpoint": str(checkpoint),
+        }))
+
+    namespace.update(TASK=manifest["config"]["task"], MODEL=manifest["config"]["model"],
+                     CHECKPOINT_PATH=checkpoint, TRAIN_MANIFEST=selected_manifest,
+                     rates={"supports_velocity_command": True, "control_hz": 50.0, "physics_hz": 200.0},
+                     SIM_SCENE="studio", EVAL_SECONDS=1.01, ARTIFACTS=artifacts,
+                     REPO=tmp_path, PYTHON=tmp_path / "python", run=run)
+    execute("# @title Fixed-command evaluation", namespace)
+    assert len(commands) == 4
+    vectors = [[float(value) for value in command[command.index("--command") + 1:
+                                                 command.index("--command") + 4]]
+               for command in commands]
+    assert vectors == [[0.1, 0.0, 0.0], [0.0, 0.1, 0.0], [0.0, 0.0, 0.2], [0.0, 0.0, 0.0]]
+    for command in commands:
+        assert command[command.index("--checkpoint") + 1] == checkpoint
+        assert command[command.index("--task") + 1] == "jumper.ripple"
+        assert command[command.index("--steps") + 1] == "51"
+        assert command[command.index("--scene") + 1] == "studio"
+    summary = json.loads((namespace["EVALUATION_DIR"] / "summary.json").read_text())
+    assert [item["case"] for item in summary] == ["forward", "sideways", "turn", "stand"]
+    assert all(item["scene"] == "studio" for item in summary)
