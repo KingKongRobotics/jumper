@@ -161,10 +161,12 @@ def test_explicit_new_run_clears_selection_but_preserves_existing_files(tmp_path
     namespace = settings()
     checkpoint, manifest = saved_run(tmp_path / "old-run")
     namespace["RUN_STATE"].update(backup_config=manifest["config"],
-                                  restored_checkpoint=str(checkpoint), backup_archive="old.zip")
+                                  restored_checkpoint=str(checkpoint), backup_archive="old.zip",
+                                  previous_backup_selection={"backup_archive": "earlier.zip"})
     execute("# @title Advanced source", namespace, START_NEW_RUN=True)
     assert "backup_config" not in namespace["RUN_STATE"]
     assert "restored_checkpoint" not in namespace["RUN_STATE"]
+    assert "previous_backup_selection" not in namespace["RUN_STATE"]
     assert checkpoint.is_file() and (checkpoint.parent / colab.MANIFEST).is_file()
 
 
@@ -446,6 +448,135 @@ def test_restore_cell_reuses_the_verified_selection_without_upload_or_reextract(
     assert namespace["RESTORED_CHECKPOINT"] == first
     assert Path(first).read_bytes() == checkpoint.read_bytes()
     assert namespace["RUN_STATE"]["restored_checkpoint"] == first
+
+
+def replacement_selection(tmp_path, monkeypatch, corruption=None):
+    """Select a real uploaded candidate while retaining a usable earlier backup."""
+    old_checkpoint, old_manifest = saved_run(tmp_path / "old-run")
+    old_archive = colab.create_backup(old_checkpoint.parent, tmp_path / "old.zip")
+    candidate_checkpoint, candidate_manifest = saved_run(tmp_path / "candidate-run")
+    candidate_manifest["config"]["revision"] = "c" * 40
+    candidate_manifest["config"]["task"] = "jumper.tripod"
+    colab.atomic_json(candidate_checkpoint.parent / colab.MANIFEST, candidate_manifest)
+    candidate_archive = tmp_path / "candidate.zip"
+    if corruption:
+        checkpoint_bytes = candidate_checkpoint.read_bytes()
+        if corruption == "checkpoint":
+            # Outer ZIP CRC is valid; the recorded checkpoint's contents are invalid.
+            checkpoint_bytes = b"incomplete checkpoint, with a valid outer member CRC"
+        with zipfile.ZipFile(candidate_archive, "w", compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr("backup.json", json.dumps({"schema": 1, "run": "run"}))
+            archive.writestr("run/" + colab.MANIFEST, json.dumps(candidate_manifest))
+            archive.writestr("run/" + candidate_checkpoint.name, checkpoint_bytes)
+        if corruption == "crc":
+            # Corrupt only the stored policy bytes; manifest reading still succeeds.
+            payload = candidate_archive.read_bytes()
+            marker = b"saved optimizer and weights fixture"
+            assert payload.count(marker) == 1
+            candidate_archive.write_bytes(payload.replace(marker, b"X" + marker[1:]))
+    else:
+        colab.create_backup(candidate_checkpoint.parent, candidate_archive)
+    namespace = settings()
+    previous = {
+        "backup_config": old_manifest["config"], "backup_manifest": old_manifest,
+        "backup_archive": str(old_archive), "restored_checkpoint": str(old_checkpoint),
+    }
+    namespace["RUN_STATE"].update(previous)
+    namespace.update(WORKFLOW_MODE="Continue training", SESSION=tmp_path / "session",
+                     PYTHON=tmp_path / "python", REPO=tmp_path)
+    namespace["SESSION"].mkdir()
+    namespace["Path"] = lambda value: (
+        tmp_path / "upload-inbox" if str(value) == "/content/jumper-backups" else Path(value)
+    )
+    monkeypatch.setattr(sys.modules["google.colab"].files, "upload",
+                        lambda: {"candidate.zip": candidate_archive.read_bytes()})
+    execute("# @title Continue training: backup selection", namespace,
+            REPLACE_BACKUP_SELECTION=True)
+    assert namespace["RUN_STATE"]["previous_backup_selection"] == previous
+    assert namespace["RUN_STATE"]["backup_config"] == candidate_manifest["config"]
+    assert namespace["RUN_STATE"]["restored_checkpoint"] is None
+    return namespace, previous, candidate_checkpoint, candidate_manifest
+
+
+def restore_runner(commands, configuration):
+    """Run the real CPU restore/validator at the notebook's subprocess boundary."""
+    def run(command, **kwargs):
+        commands.append(command)
+        if "restore" in command:
+            checkpoint = colab.restore_backup(
+                Path(command[command.index("--archive") + 1]),
+                Path(command[command.index("--destination") + 1]),
+            )
+            colab.atomic_json(Path(command[command.index("--out") + 1]),
+                              {"checkpoint": str(checkpoint)})
+        else:
+            assert command[1] == "-c"
+            # Nested rollback try/except must not indent the child Python program.
+            ast.parse(command[2])
+            colab.validate_resume(Path(command[-1]), configuration)
+    return run
+
+
+@pytest.mark.parametrize("corruption,error,match", [
+    ("crc", zipfile.BadZipFile, "Bad CRC"),
+    ("checkpoint", ValueError, "no complete matching checkpoint"),
+])
+def test_metadata_readable_replacement_rolls_back_when_real_restore_fails(
+    tmp_path, monkeypatch, external_ui, corruption, error, match
+):
+    namespace, previous, _, candidate_manifest = replacement_selection(
+        tmp_path, monkeypatch, corruption
+    )
+    commands = []
+    namespace["run"] = restore_runner(commands, candidate_manifest["config"])
+    with pytest.raises(error, match=match):
+        execute("# @title Verify the selected continuation checkpoint", namespace)
+    assert len(commands) == 1 and "restore" in commands[0]
+    assert all(namespace["RUN_STATE"][key] == value for key, value in previous.items())
+    assert "previous_backup_selection" not in namespace["RUN_STATE"]
+    assert namespace["RESTORED_CHECKPOINT"] == previous["restored_checkpoint"]
+    assert Path(previous["restored_checkpoint"]).is_file()
+    colab.validate_resume(Path(previous["restored_checkpoint"]), previous["backup_config"])
+
+
+def test_replacement_rolls_back_when_real_resume_validation_fails(
+    tmp_path, monkeypatch, external_ui
+):
+    namespace, previous, _, manifest = replacement_selection(tmp_path, monkeypatch)
+    commands = []
+    wrong_environment = {**manifest["config"], "num_envs": manifest["config"]["num_envs"] + 1}
+    namespace["run"] = restore_runner(commands, wrong_environment)
+    with pytest.raises(ValueError, match="resume configuration differs: num_envs"):
+        execute("# @title Verify the selected continuation checkpoint", namespace)
+    assert len(commands) == 2 and commands[1][1] == "-c"
+    assert Path(commands[1][-1]).is_file()  # The candidate was fully restored first.
+    assert all(namespace["RUN_STATE"][key] == value for key, value in previous.items())
+    assert "previous_backup_selection" not in namespace["RUN_STATE"]
+    assert namespace["RESTORED_CHECKPOINT"] == previous["restored_checkpoint"]
+    colab.validate_resume(Path(previous["restored_checkpoint"]), previous["backup_config"])
+
+
+def test_valid_replacement_commits_selection_and_repeat_does_not_reextract(
+    tmp_path, monkeypatch, external_ui
+):
+    namespace, previous, checkpoint, manifest = replacement_selection(tmp_path, monkeypatch)
+    commands = []
+    namespace["run"] = restore_runner(commands, manifest["config"])
+    execute("# @title Verify the selected continuation checkpoint", namespace)
+    selected = namespace["RESTORED_CHECKPOINT"]
+    assert selected != previous["restored_checkpoint"]
+    assert Path(selected).read_bytes() == checkpoint.read_bytes()
+    assert namespace["RUN_STATE"]["restored_checkpoint"] == selected
+    assert namespace["RUN_STATE"]["backup_config"] == manifest["config"]
+    assert "previous_backup_selection" not in namespace["RUN_STATE"]
+    monkeypatch.setattr(sys.modules["google.colab"].files, "upload",
+                        lambda: pytest.fail("Verified replacement requested another upload"))
+    execute("# @title Continue training: backup selection", namespace)
+    execute("# @title Verify the selected continuation checkpoint", namespace)
+    assert sum("restore" in command for command in commands) == 1
+    assert sum(command[1] == "-c" for command in commands) == 2
+    assert namespace["RESTORED_CHECKPOINT"] == selected
+    assert Path(previous["restored_checkpoint"]).is_file()
 
 
 def test_demo_disabled_does_not_block_downloads_of_current_policy(tmp_path, external_ui):
