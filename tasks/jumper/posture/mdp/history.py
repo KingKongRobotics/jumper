@@ -87,7 +87,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.utils.buffers import CircularBuffer
 
 if TYPE_CHECKING:

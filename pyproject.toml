@@ -106,6 +106,27 @@ line-length = 100
 # rl/mjrl along with them.
 exclude = ["rl/mjlab", "rl/rsl_rl"]
 
+[tool.ruff.lint]
+# Written out rather than left to ruff's default, because the default moved
+# under this repository once already: `ruff` is unpinned in the dev extra, and
+# ruff 0.16 enables 415 rules where 0.12 enabled these four groups, so
+# `ruff check .` went from 83 findings to 350 on 2026-10-08 with no change to
+# the code. These are the rules the code is kept clean against, on either
+# version.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# A test that `importorskip`s torch or mjlab has to do so before the imports
+# that need them, which is E402 by construction.
+"tests/*" = ["E402"]
+# One-off checks and asset tools are written dense -- several statements to a
+# line, an import where it is first needed -- on purpose: each is read once,
+# beside the measurement it produced. Only the layout is exempt; a dead import
+# or an empty f-string is still a finding there.
+"tools/checks/*" = ["E401", "E402", "E701", "E702"]
+"assets/*/tools/*" = ["E401", "E402", "E701", "E702"]
+"tasks/*/tools/*" = ["E701"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # The vendored copies' own tests are not this repository's responsibility;

@@ -56,6 +56,10 @@ RUST_HINTS = (
     ("error while loading shared libraries",
      ("built, and the loader cannot find libddsc: sudo ldconfig, or add its lib/ to "
       "LD_LIBRARY_PATH")),
+    ("Library not loaded: @rpath/libddsc",
+     ("built, and the macOS loader cannot find libddsc: the crate writes its rpath from "
+      "$CYCLONEDDS_HOME at build time, so export it and rebuild (cargo clean -p mjrl-fsm), "
+      "or add its lib/ to DYLD_LIBRARY_PATH for one run")),
 )
 
 

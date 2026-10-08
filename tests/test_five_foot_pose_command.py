@@ -568,7 +568,9 @@ def test_the_shipped_bands_are_the_reference_implementation_s() -> None:
     is when a claw is aimed.
     """
     cfg = BodyPoseCommandCfg(resampling_time_range=(5.0, 5.0))
-    deg = lambda band: tuple(round(b / _DEG, 1) for b in band)
+    def deg(band):
+        return tuple(round(b / _DEG, 1) for b in band)
+
     assert deg(cfg.stand_pitch) == (-20.0, 20.0), deg(cfg.stand_pitch)
     assert deg(cfg.stand_roll) == (-15.0, 15.0), deg(cfg.stand_roll)
     assert deg(cfg.stand_twist) == (-30.0, 30.0), deg(cfg.stand_twist)

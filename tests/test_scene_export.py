@@ -130,7 +130,10 @@ def test_the_package_does_not_refer_to_this_machine(football: Path) -> None:
     compile succeeds on the machine that wrote it and nowhere else."""
     for xml in football.rglob("*.xml"):
         text = xml.read_text("utf-8")
-        assert str(REPO) not in text, xml
+        # With the separator: a checkout at a one-letter path such as `/w`
+        # otherwise matches `</worldbody>`, and an absolute reference into the
+        # repository always continues past its root.
+        assert f"{REPO}/" not in text, xml
         assert "assets/" in text, xml
 
 

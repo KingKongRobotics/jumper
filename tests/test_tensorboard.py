@@ -162,6 +162,15 @@ def test_free_port_ignores_a_lingering_time_wait() -> None:
     6008 run after run, which makes a bookmark worthless.
     """
     srv = socket.socket()
+    # The server this stands in for sets SO_REUSEADDR on its listening socket
+    # (socketserver's `allow_reuse_address`, which TensorBoard's werkzeug
+    # inherits), and the connections it accepts carry the option into TIME_WAIT.
+    # That matters on Linux, where a bind with SO_REUSEADDR over a TIME_WAIT
+    # entry succeeds only if that entry has the option too; BSD and macOS ask
+    # only the new socket. Without this line the test passed on macOS and
+    # failed on every Linux machine (reported 49606 for 49605 in a container on
+    # 2026-10-08) while probing a port no real server would have left behind.
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))
     srv.listen(1)
     port = srv.getsockname()[1]
