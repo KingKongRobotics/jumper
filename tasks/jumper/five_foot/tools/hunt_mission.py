@@ -37,6 +37,7 @@ from tasks.jumper.five_foot.tools.hunt_motion import (
     _off_wall,
     _root,
     _steer,
+    _walk_out,
     _wall_gap,
     _wrap,
     camera_look,
@@ -454,6 +455,13 @@ def _search(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
         return STOP, 0.0
     if hinted is None:
         hunt.looked = False
+    pos, yaw, _ = _base(robot)
+    gap, inward = _wall_gap(pos[:2])
+    if gap < WALL_BODY:
+        # The spiral's yaw shrinks as the search goes on. Against a wall,
+        # the keep-out drops the forward step and that yaw is all that is
+        # left, so the crab stands looking at the face. Face the room and walk.
+        return _walk_out(yaw, inward), 0.0
     hunt.search_s += float(env.step_dt)
     cycle = SEARCH_WALK_S + SEARCH_TURN_S
     phase = hunt.search_s % cycle

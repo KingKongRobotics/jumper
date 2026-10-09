@@ -214,6 +214,35 @@ def _walk_out(yaw: float, outward: np.ndarray) -> Cmd:
     return (0.18, 0.0, float(np.clip(yaw_err, -0.5, 0.5)))
 
 
+def _pocket_exit(xy: np.ndarray, tray: np.ndarray) -> np.ndarray | None:
+    """Direction out of the gap between the can and a wall, or None.
+
+    In that gap the way off the can points at the wall and the way off the
+    wall points at the can, so each keep-out cancels the other and the crab
+    stands. The way out is along the wall, toward the side with more room.
+    """
+    wall_gap, inward = _wall_gap(xy)
+    can_gap, outward = _round_gap(xy, tray, _can_half())
+    if can_gap > FOOT_REACH + CAN_CLEAR or wall_gap > WALL_BODY + FOOT_REACH:
+        return None
+    # ``outward`` opposes ``inward`` when the can sits between him and the room.
+    if float(np.dot(outward, inward)) > -0.35:
+        return None
+    along = np.array([-float(inward[1]), float(inward[0])])
+
+    def room(direction: np.ndarray) -> float:
+        nxt = np.asarray(xy, dtype=np.float64) + direction * 0.40
+        gap, _ = _wall_gap(nxt)
+        clearance, _ = _round_gap(nxt, tray, _can_half())
+        return gap + min(clearance, 0.40)
+
+    # A margin so two nearly equal sides do not swap every step and leave
+    # him turning in place. The first side stays when they are close.
+    if room(-along) > room(along) + 0.02:
+        along = -along
+    return along
+
+
 def _off_wall(robot, cmd: Cmd, margin: float) -> Cmd:
     """Drop the part of ``cmd`` that walks the trunk through a wall.
 
@@ -249,10 +278,17 @@ def _steer(robot, cmd: Cmd, tray: np.ndarray, margin: float, *, deliver: bool = 
     A carry is the exception. It keeps walking until the bug is over the
     opening, and this only turns it around once the trunk itself is at the
     wood. Stopping at the foot circle left the bug short of the rim.
+
+    The gap between the can and a wall is the other exception, deliver
+    included. Each keep-out's way out is the other's obstacle, and a carry
+    that has reached the back of the can otherwise stands there.
     """
+    pos, yaw, _ = _base(robot)
+    side = _pocket_exit(pos[:2], tray)
+    if side is not None:
+        return _walk_out(yaw, side)
     cmd = _off_wall(robot, cmd, margin)
     vx, vy, wz = cmd
-    pos, yaw, _ = _base(robot)
     gap, outward = _round_gap(pos[:2], tray, _can_half())
     c, s = math.cos(yaw), math.sin(yaw)
     world = np.array([c * vx - s * vy, s * vx + c * vy])
@@ -271,6 +307,14 @@ def _steer(robot, cmd: Cmd, tray: np.ndarray, margin: float, *, deliver: bool = 
     if float(np.dot(world, tangent)) < 0.0:
         tangent = -tangent
     if float(np.linalg.norm(world)) < 0.12:
+        # The leftover is too small to choose a side, and the sign of that
+        # noise flips the turn every step. Prefer the tangent that also
+        # leaves the nearest wall, and a fixed sign when both are equal.
+        _, inward = _wall_gap(pos[:2])
+        if float(np.dot(-tangent, inward)) > float(np.dot(tangent, inward)) + 1e-3:
+            tangent = -tangent
+        elif abs(float(np.dot(tangent, inward))) < 1e-3 and float(tangent[0]) < 0.0:
+            tangent = -tangent
         world = tangent * 0.18
     else:
         world = tangent * min(float(np.linalg.norm(world)), 0.22)
