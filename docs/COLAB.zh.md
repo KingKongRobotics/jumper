@@ -1,4 +1,4 @@
-<!-- tracks: COLAB.md @ sha256:1f4b6fb12620710e -->
+<!-- tracks: COLAB.md @ sha256:ee37e579ae37dcc5 -->
 
 # 在 Google Colab 中运行 Jumper
 
@@ -9,10 +9,8 @@
 你的电脑只需要浏览器。
 
 [在 Colab 中打开](https://colab.research.google.com/github/KingKongRobotics/jumper/blob/main/notebooks/jumper_colab.ipynb)，
-保存副本并选择 GPU 运行时。正式入口和默认值使用上游 `main`。合并前使用
-[PR 预览](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)。
-开始新训练时，在高级源码设置中选择 `https://github.com/tianrking/jumper.git` 和
-`codex/colab-training-and-video`。
+保存副本并选择 GPU 运行时。链接和 Notebook 的默认值都使用本仓库的 `main`；高级源码设置
+可以指定别的仓库或提交。
 
 ## 新训练或继续训练
 
@@ -42,10 +40,9 @@
 `CORE_VERSION_OVERRIDES`。克隆目录使用 `/content` 下的简单名称，默认 `jumper`。
 只有远程地址和提交都一致时才复用已有克隆；换源码时使用新的目录或运行时。
 
-备份记录的提交必须在所选仓库中存在。恢复最初 `19e8f4d` 备份时，
-先打开[该提交的 Notebook](https://colab.research.google.com/github/tianrking/jumper/blob/19e8f4d54751bccf34c5a336d46b5b8d27afe8f7/notebooks/jumper_colab.ipynb)，
-使用 `tianrking/jumper`，因为上游压缩合并可能不保留该提交。当前 Notebook 需要
-新版流程接口，会拒绝旧源码。当前备份的核心包版本可以直接读取，无需手动抄写。
+备份记录的提交必须在所选仓库中存在：备份会记录它所用的仓库、提交和核心包版本，
+续训会先检出那个提交再恢复，所以从 fork 做出的备份需要在 `REPOSITORY_URL` 里填那个
+fork。核心包版本直接从备份读取，无需手动抄写。
 手动覆盖只接受 `torch`、`mujoco`、`mujoco-warp`、`warp-lang`、
 `numpy` 和 `tensordict` 的精确版本，不接受 URL、版本范围或 pip 参数。
 支持的 Torch/torchvision 配对是 2.9.1/0.24.1，其他配对需另行验证。
@@ -92,6 +89,8 @@ GPU 和会话时长由 Colab 分配。提高 `NUM_ENVS` 前先看实际设备和
 `--command VX VY YAW`、`--evaluation-out JSON` 和 `--replay-info-out JSON`；
 不使用这些选项时，普通回放行为不变。
 
+回放就是 `scripts/play.py --video`，仓库里唯一的 MP4 录像器，所以 Notebook 里看到的
+和桌面上 `play` 显示的是同一个画面；相机开关见[使用指南](USAGE.zh.md)。
 Notebook 内嵌显示 MP4。`RECORD_JOINTS` 还会保存 `measure.csv` 和 PNG，每控制步
 一条记录，包含时间、关节绝对位置（rad）、速度（rad/s）、实际施加的执行器力矩
 （N·m）和可用足端力（N）。这是仿真测量。Colab 不会打开桌面键盘/手柄窗口。
@@ -117,67 +116,22 @@ Notebook 内嵌显示 MP4。`RECORD_JOINTS` 还会保存 `measure.csv` 和 PNG�
 拒绝不安全的 ZIP 条目、不完整检查点和不兼容的设置。续训写入新的时间戳目录。
 CLI 参数和诊断见[使用指南](USAGE.zh.md)和[安装说明](AGENT_SETUP.md)。
 
-## 验证边界
+## 实际验证过什么
 
-核心流程已经在真实 Google Colab 会话的 NVIDIA Tesla T4 上运行，环境为
-Python 3.13、PyTorch 2.9.1+cu126、MuJoCo 3.11 和 Warp 1.18。以下结果对应
-已测试分支的核心代码，不能保证未来每一种 Colab 镜像或分配到的 GPU 都相同：
+这套流程在真实 Google Colab 会话的 NVIDIA Tesla T4 上跑过，环境为 Python 3.13、
+PyTorch 2.9.1+cu126、MuJoCo 3.11 和 Warp 1.18，代码是这份 Notebook 合入前的版本。
+这只说明链路能走通，不保证以后每一种 Colab 镜像或分配到的 GPU 都一样，更不说明
+这样训出来的策略就是好的：[快速开始](../notebooks/README.zh.md)里那段视频对应的
+500 次迭代 `jumper.tripod` 训练仍停在课程等级 0，线速度跟踪误差 0.195，高于 0.105
+的升级阈值。
 
-实测源码（`19e8f4d`）已经完成默认 500 次迭代 T4 运行，包括关节测量、标量
-导出和每次运行的附件打包。下表记录已确认的工作流程与回归测试结果。
+完整跑通的内容：256 个环境的短训练检查和 500 次迭代训练；ZIP 备份、恢复并以相同源码
+和核心包版本再训练五次；从上传的 ZIP 续训的 64 环境运行；训练中途一次真实的 `SIGINT`
+中断，随后备份、恢复并继续训练；ONNX 导出与 torch actor 的最大绝对误差低于 `1e-6`；
+通过 NVIDIA EGL 录制的 MP4 回放和关节测量；四种固定命令评估；导出全部标量标签的
+训练曲线。仓库的测试套件在同一环境里按文件分批跑过；两项失败在没有这份工作的基线上
+同样复现（一项是姿态镜像几何检查，一项是 TensorBoard 对残留 `TIME_WAIT` socket 的
+端口选择）。
 
-| 检查 | 实际结果 |
-|---|---|
-| GPU 训练冒烟 | `jumper.tripod` 的 256 个环境完成五次 PPO 迭代。 |
-| 主训练 | `jumper.tripod` 的 256 个环境完成 500 次迭代，生成 `model_499.pt`。 |
-| 恢复 | 恢复 ZIP 后，以相同源码和核心包版本从 `model_499.pt` 继续训练五次，保存 `model_503.pt`。 |
-| ONNX 导出对比 | 411 维输入、20 维输出 actor 通过对比，最大绝对误差为 `7.15e-7`。 |
-| 已有舞蹈视频 | 使用真实 T4 GPU 上的 NVIDIA EGL，成功生成 500 步 MP4，通过本地解码和云端 `ffprobe` 检查。 |
-| 新训练策略视频 | 使用真实 T4 GPU 上的 NVIDIA EGL，成功生成新训练策略的 500 步 MP4，并通过相同视频检查。 |
-| 关节测量 | CSV 有 500 行，包含位置、速度、实际施加的执行器力矩和足端力，配套 PNG 已生成。 |
-| 训练曲线 | 导出 51 个标量标签、25,500 个采样，并生成六面板曲线 PNG。 |
-| 可移植备份 | 121,887,490 字节 ZIP 通过 CRC 检查，包含本次运行的检查点和已生成产物。 |
-| 回放参数变化 | 两秒、320 x 240、20 fps、studio 场景、摄像机距离 1.5 米、关闭关节记录的回放成功，生成 41 帧 H.264；恢复默认十秒设置后成功生成新的 500 行关节记录。 |
-| 针对性检查 | 104 项全部通过，用时 6.89 秒。 |
-| 全部测试文件 | 全部 62 个 `test_*.py` 文件按每个 pytest 进程最多四个文件，分 16 批顺序完成；JUnit 合计 1123 项，其中 1096 项通过、25 项跳过、2 项失败、0 项错误，各批用时合计 354.651 秒。 |
-| Google Drive 挂载 | 本次关闭，未测试。 |
-
-图形检查使用的是 NVIDIA EGL，而非 Mesa 软件渲染。安装流程通过任务目录中的
-vendor JSON 选择已有 NVIDIA 图形库，没有更改系统驱动。备份和恢复结果验证的是
-本地快照机制，不是 Google Drive 授权或远程持久化。
-两段视频均为 301 帧、H.264、640 x 480、30 fps，时长 10.033333 秒；其中包含
-初始画面，以及十秒仿真期间采样的画面。关闭关节记录时，之前的测量文件保存在
-`replay-history`，并从该次回放附件中排除，不会被当成新测量展示。
-
-单进程完整 pytest 运行在约 57% 处被系统以 `SIGKILL`（`-9`）终止，因此完成
-的测试覆盖来自上述 16 批，而不是一次完成的单进程套件。分批结果中的两项失败
-分别涉及姿态镜像几何，以及 TensorBoard 对残留 `TIME_WAIT` socket 的端口
-选择；两项都在同一个 Colab 环境的上游基线上复现。跳过的测试不等于通过。
-
-另一次基线顺序检查先运行夹爪操作测试，再运行解析器默认线程测试，也复现了
-native 线程数返回二、期待八的差异。解析器在分批分支运行中通过，因此该基线
-顺序结果不计为 1123 项分批合计中的第三项失败。独立进程运行不能证明所有测试
-在同一个共享进程中可以共存。
-
-这些运行说明已测试的训练、检查点、恢复和导出链路可用，并不证明策略收敛、
-步态稳健或实机行为。两项分批失败、单进程中断和基线顺序依赖限制了回归证据
-的范围，Google Drive 挂载没有实测。
-
-## 新版流程验收
-
-重排后的流程另行在真实 Tesla T4 上测试。运行源码为 `9865160`，续训 Notebook 为
-`243a33e`。上面保留的 500 次迭代视频仍来自 `19e8f4d`，不是这次新版短训练的视频。
-
-| 检查 | 实际结果 |
-|---|---|
-| 新训练 | `jumper.tripod` 的 64 个环境完成五次短训练检查和 25 次主训练，生成 `model_24.pt`。 |
-| ZIP 续训 | 在 `files.upload` 边界提供真实备份字节，自动填入任务、环境数、源码和六个核心包版本。重跑基本和高级表单后保留所选检查点，再训练五次生成 `model_28.pt`。 |
-| 回放与评估 | 新训练和续训检查点都生成两秒回放，以及前进、侧移、转向、站立 JSON 报告；全部匹配检查点课程等级 0。每段回放有 100 个控制步、61 帧 H.264、640 x 480、30 fps，包含初始帧。 |
-| ONNX | 新训练和续训 actor 均通过数值对比，最大绝对误差分别为 `4.77e-7` 和 `3.58e-7`。 |
-| 续训备份 | 23,247,110 字节 ZIP 通过本地 CRC 和 SHA-256 检查，包含 `model_28.pt`、曲线、回放、评估报告和导出。 |
-| 真实中断 | 预算为 2000 次迭代的训练在完整保存 `model_0.pt` 后收到 SIGINT；清单记录 `interrupted`，备份和恢复后再训练两次，正常结束并保存 `model_1.pt`。 |
-| 针对性回归 | 在测试源码 `d5bc9e9` 上，253 项通过、54 个警告，用时 74.77 秒，包含全部 43 项回放测试、18 项 native parity 测试和真实 Torch 固定命令采样/重置检查。 |
-
-ZIP 上传测试通过 Notebook 上传边界读取真实字节，没有测试浏览器文件选择器。
-Drive 挂载仍未实测。固定命令报告说明评估已执行并展示跟踪误差；短训练和课程等级
-都不能证明策略收敛或实机安全。
+Google Drive 挂载没有实测。ZIP 上传是在 Notebook 的上传边界用真实字节测试的，没有
+经过浏览器的文件选择器。

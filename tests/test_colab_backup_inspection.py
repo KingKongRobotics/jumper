@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "colab_backup_helpers", Path(__file__).resolve().parents[1] / "rl/mjrl/colab.py"
+    "colab_backup_helpers", Path(__file__).resolve().parents[1] / "tools/colab.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 colab = importlib.util.module_from_spec(SPEC)
