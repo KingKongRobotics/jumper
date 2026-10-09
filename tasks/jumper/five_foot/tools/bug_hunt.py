@@ -71,6 +71,7 @@ from tasks.jumper.five_foot.tools.hunt_mission import (
     install_pose,
     set_command,
     tick,
+    tuck_off_claw,
 )
 from tasks.jumper.five_foot.tools.hunt_motion import _base, _into, _root, mouth_in_base
 from tasks.jumper.five_foot.tools.hunt_scene import (
@@ -303,6 +304,7 @@ def run_hunt(wrapped, env, policy, viewer, hunt: Hunt, arm: Arm, shown: ShownArm
         with torch.inference_mode():
             action = policy(obs)
         command, pitch = tick(env, hunt, arm, env.sim.mj_model)
+        action = tuck_off_claw(env, action, hunt)
         set_command(held, *command)
         held["pitch"] = pitch
         arm.step_targets()

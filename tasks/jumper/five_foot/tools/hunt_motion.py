@@ -187,6 +187,18 @@ def _wall_gap(xy: np.ndarray) -> tuple[float, np.ndarray]:
     return gap, inward
 
 
+#: A bug this close to two walls at once is in a corner. One wall is a drag.
+#: Two is where the other front claw meets the face before the mouth can.
+CORNER_GAP = 0.12
+
+
+def in_corner(xy: np.ndarray) -> bool:
+    """True when ``xy`` is close to two walls, not just the nearest one."""
+    along_x = ROOM_HALF - abs(float(xy[0]))
+    along_y = ROOM_HALF - abs(float(xy[1]))
+    return along_x < CORNER_GAP and along_y < CORNER_GAP
+
+
 def _can_half() -> float:
     return BIN_INNER_HALF + BIN_WALL_T
 
