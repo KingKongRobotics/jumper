@@ -22,6 +22,7 @@ from tasks.jumper.five_foot.claw import (
 )
 from tasks.jumper.five_foot.mdp.gripper import squeeze_limited
 from tasks.jumper.five_foot.mdp.pose_command import PITCH
+from tasks.jumper.five_foot.objects import BIN_INNER_HALF
 from tasks.jumper.five_foot.tools.grasp_objects import FOLLOWED
 from tasks.jumper.five_foot.tools.hunt_motion import (
     LOOK_RANGE,
@@ -38,12 +39,12 @@ from tasks.jumper.five_foot.tools.hunt_motion import (
     _steer,
     _wall_gap,
     _wrap,
-    body_error,
     camera_look,
     in_tray,
     in_view,
     over_tray,
 )
+from tasks.jumper.five_foot.tools.hunt_scene import CAN_WALL_H
 
 #: ``deploy/lib.rs`` ``PRESETS``, degrees, thumb up / thumb down / thumb-web up.
 PRESET_DEG = {
@@ -78,6 +79,14 @@ LIN_LIM = 0.5
 ANG_LIM = 2.0
 
 SEARCH_VX = 0.18
+#: A search walks, then stops and turns in place, so the camera sweeps
+#: ground it would otherwise walk past. Seconds.
+SEARCH_WALK_S = 4.0
+SEARCH_TURN_S = 1.6
+#: Extra shoulder travel, past the carry lift, once the bug is at the can.
+#: The carry lift leaves the mouth about level with the rim, and the jaws
+#: meet the wood instead of clearing it.
+DROP_RAISE = 0.45
 #: Nose down, in radians. Positive pitch is nose down, and 15 degrees is the
 #: edge of the band the policy tracks while it is walking. The onboard camera
 #: looks forward, so a level search walks over a bug on the floor.
@@ -446,6 +455,13 @@ def _search(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     if hinted is None:
         hunt.looked = False
     hunt.search_s += float(env.step_dt)
+    cycle = SEARCH_WALK_S + SEARCH_TURN_S
+    phase = hunt.search_s % cycle
+    if phase >= SEARCH_WALK_S:
+        # Stop and turn. The direction flips each cycle so it does not
+        # only ever look one way.
+        direction = 1.0 if int(hunt.search_s / cycle) % 2 == 0 else -1.0
+        return (0.0, 0.0, direction * 0.9), LOOK_DOWN
     radius = 0.35 + 0.04 * hunt.search_s
     return (SEARCH_VX, 0.0, SEARCH_VX / radius), LOOK_DOWN
 
@@ -514,16 +530,22 @@ def _approach(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     if not in_view(origin, look, half, point):
         _lose(hunt, robot, bearing)
         cmd = STOP
-    elif abs(bearing) > 0.35:
+    elif abs(bearing) > 0.28:
+        # The face, not the claw. The seat sits off the centre line, and
+        # aiming it yaws the body until the jaw leads and knocks the bug away.
         cmd = _turn_to(bearing)
     else:
         pitch = LOOK_DOWN
         hunt.seen = point.copy()
-        vel, arrived = body_error(robot, point[:2], hunt.seat_xy)
-        vx, vy, wz = vel
-        # Forward only while it is in view. A negative command is the
-        # trunk following a bug it has already walked past.
-        cmd = _off_wall(robot, (max(0.0, vx), vy, wz), WALL_BODY)
+        reach = max(float(hunt.seat_xy[0]), 0.18)
+        if _dist > reach + 0.05:
+            cmd = _off_wall(robot, (
+                0.16, 0.0, float(np.clip(bearing, -0.35, 0.35)),
+            ), WALL_BODY)
+        elif abs(bearing) > 0.25:
+            cmd = _turn_to(bearing)
+        else:
+            arrived = True
     if arrived:
         _, hunt.hold_yaw, _ = _base(robot)
         hunt.go("extend")
@@ -682,14 +704,24 @@ def _verify(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     return STOP, 0.0
 
 
+def _hold_bug(arm: Arm, hunt: Hunt, extra: float) -> None:
+    """Grasp pose, lifted, finger shut. ``extra`` is the raise over the carry."""
+    arm.goal = hunt.preset.copy()
+    arm.goal[1] = hunt.preset[1] + hunt.lift_sign * (LIFT_RAD + extra)
+    arm.finger = GRIPPER_CLOSED
+
+
 def _carry(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     del model
     robot = env.scene["robot"]
-    arm.goal = hunt.preset.copy()
-    arm.goal[1] = hunt.preset[1] + hunt.lift_sign * LIFT_RAD
-    arm.finger = GRIPPER_CLOSED
     bug = _root(env.scene[hunt.bug])
     tray = _root(env.scene["tray"])
+    # Raise before the jaws meet the rim. The carry height is about the
+    # rim, so walking the last stretch at that height puts the claw on
+    # the wood and the bug never gets over it.
+    bug_r = float(np.hypot(bug[0] - tray[0], bug[1] - tray[1]))
+    at_can = over_tray(bug, tray) or bug_r < BIN_INNER_HALF + 0.18
+    _hold_bug(arm, hunt, DROP_RAISE if at_can else 0.0)
     mouth_z = float(env.claw.mouth()[0, 2])
     if hunt.age == 1:
         # Height above the anvil, not the floor. The gait crouches as it
@@ -707,6 +739,10 @@ def _carry(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
         hunt.bug = None
         arm.finger = GRIPPER_OPEN
         hunt.go("stow")
+        return STOP, 0.0
+    # Stand and lift once the bug is at the can. Walking on while the jaws
+    # are still at the rim is what puts the claw into the wall.
+    if at_can and mouth_z < CAN_WALL_H + 0.02:
         return STOP, 0.0
     if over_tray(bug, tray):
         hunt.settle += 1
@@ -736,8 +772,7 @@ def _carry(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
 
 def _drop(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     del model
-    arm.goal = hunt.preset.copy()
-    arm.goal[1] = hunt.preset[1] + hunt.lift_sign * LIFT_RAD
+    _hold_bug(arm, hunt, DROP_RAISE)
     arm.finger = GRIPPER_OPEN
     bug = _root(env.scene[hunt.bug])
     tray = _root(env.scene["tray"])
