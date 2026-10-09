@@ -38,6 +38,13 @@ FOOT_REACH = 0.24
 #: How early a search or a chase turns to walk around the can, past the
 #: feet. The turn is done in place, so this is the room left to stop.
 CAN_CLEAR = 0.20
+#: Distance at which a search starts bending along the wall. Inside
+#: ``WALL_BODY`` the command is the skirt itself; between the two it blends
+#: from the spiral so he curves before he is nose-on to the face.
+SKIRT_BAND = 0.50
+#: A camera ray that meets a wall inside this range is looking at the wall.
+#: Farther than that, the floor is still in view.
+WALL_VIEW = 0.70
 
 Cmd = tuple[float, float, float]
 
@@ -214,7 +221,99 @@ def _walk_out(yaw: float, outward: np.ndarray) -> Cmd:
     return (0.18, 0.0, float(np.clip(yaw_err, -0.5, 0.5)))
 
 
-def _pocket_exit(xy: np.ndarray, tray: np.ndarray) -> np.ndarray | None:
+def looks_at_wall(origin: np.ndarray, look: np.ndarray, horizon: float = WALL_VIEW) -> bool:
+    """True when the camera's forward ray meets a room wall inside ``horizon``."""
+    flat = np.array([float(look[0]), float(look[1])])
+    norm = float(np.hypot(flat[0], flat[1]))
+    if norm < 1e-4:
+        return False
+    direction = flat / norm
+    xy = np.asarray(origin, dtype=np.float64)[:2]
+    best = math.inf
+    for axis in (0, 1):
+        if abs(float(direction[axis])) < 1e-6:
+            continue
+        bound = ROOM_HALF if direction[axis] > 0.0 else -ROOM_HALF
+        distance = (bound - float(xy[axis])) / float(direction[axis])
+        if distance > 0.0:
+            best = min(best, distance)
+    return best < horizon
+
+
+def _choose_side(
+    yaw: float, inward: np.ndarray, stored: float | None, xy: np.ndarray | None = None,
+) -> float:
+    """Which way along the wall. A stored side is kept, so he does not reverse.
+
+    Nose-on to the wall, the way he was heading does not pick a side. Take
+    the direction with more room, once, and then keep it.
+    """
+    along = np.array([-float(inward[1]), float(inward[0])])
+    if stored is not None:
+        if xy is None:
+            return stored
+        # Keep the side he already committed to. Reverse only when that way
+        # is into a corner and the other way is clearly open.
+        ahead, _ = _wall_gap(np.asarray(xy, dtype=np.float64) + along * stored * 0.40)
+        back, _ = _wall_gap(np.asarray(xy, dtype=np.float64) - along * stored * 0.40)
+        if ahead < 0.15 and back > ahead + 0.20:
+            return -stored
+        return stored
+    forward = np.array([math.cos(yaw), math.sin(yaw)])
+    score = float(np.dot(forward, along))
+    if abs(score) >= 0.25:
+        return 1.0 if score >= 0.0 else -1.0
+    if xy is None:
+        return 1.0
+
+    def ahead(direction: np.ndarray) -> float:
+        gap, _ = _wall_gap(np.asarray(xy, dtype=np.float64) + direction * 0.40)
+        return gap
+
+    return 1.0 if ahead(along) >= ahead(-along) else -1.0
+
+
+def _along_wall(inward: np.ndarray, side: float) -> np.ndarray:
+    return np.array([-float(inward[1]), float(inward[0])]) * side
+
+
+def _follow(yaw: float, heading: np.ndarray, speed: float = 0.16) -> Cmd:
+    """Walk toward ``heading`` without stopping to spin.
+
+    Forward speed stays on unless he is pointed well away from the heading,
+    and even then he creeps, so a wall does not become a stop and a reversal.
+    """
+    norm = float(np.linalg.norm(heading))
+    if norm < 1e-8:
+        return (speed, 0.0, 0.0)
+    heading = heading / norm
+    err = _wrap(math.atan2(float(heading[1]), float(heading[0])) - yaw)
+    vx = speed * max(0.45, math.cos(err))
+    if abs(err) > 1.2:
+        vx = 0.08
+    return (vx, 0.0, float(np.clip(err, -0.8, 0.8)))
+
+
+def _skirt(yaw: float, inward: np.ndarray, side: float) -> Cmd:
+    """Walk along the wall, peeling slightly into the room."""
+    heading = _along_wall(inward, side) + 0.35 * np.asarray(inward, dtype=np.float64)
+    return _follow(yaw, heading)
+
+
+def _turn_off_wall(yaw: float, inward: np.ndarray, side: float) -> Cmd:
+    """Turn along the wall when the camera is on the face and no bug is in view.
+
+    The turn keeps the stored side, so he sweeps off the wall the way he was
+    already going instead of reversing into it.
+    """
+    heading = _along_wall(inward, side)
+    err = _wrap(math.atan2(float(heading[1]), float(heading[0])) - yaw)
+    if abs(err) > 0.45:
+        return (0.0, 0.0, float(np.clip(err, -0.9, 0.9)))
+    return _skirt(yaw, inward, side)
+
+
+def _pocket_exit(xy: np.ndarray, tray: np.ndarray, side: float | None) -> tuple[np.ndarray, float] | None:
     """Direction out of the gap between the can and a wall, or None.
 
     In that gap the way off the can points at the wall and the way off the
@@ -228,19 +327,22 @@ def _pocket_exit(xy: np.ndarray, tray: np.ndarray) -> np.ndarray | None:
     # ``outward`` opposes ``inward`` when the can sits between him and the room.
     if float(np.dot(outward, inward)) > -0.35:
         return None
-    along = np.array([-float(inward[1]), float(inward[0])])
+    along = _along_wall(inward, 1.0)
+    if side is None:
+        def room(direction: np.ndarray) -> float:
+            nxt = np.asarray(xy, dtype=np.float64) + direction * 0.40
+            gap, _ = _wall_gap(nxt)
+            clearance, _ = _round_gap(nxt, tray, _can_half())
+            return gap + min(clearance, 0.40)
 
-    def room(direction: np.ndarray) -> float:
-        nxt = np.asarray(xy, dtype=np.float64) + direction * 0.40
-        gap, _ = _wall_gap(nxt)
-        clearance, _ = _round_gap(nxt, tray, _can_half())
-        return gap + min(clearance, 0.40)
-
-    # A margin so two nearly equal sides do not swap every step and leave
-    # him turning in place. The first side stays when they are close.
-    if room(-along) > room(along) + 0.02:
-        along = -along
-    return along
+        # A margin so two nearly equal sides do not swap every step.
+        # The first side stays when they are close.
+        if room(-along) > room(along) + 0.02:
+            along = -along
+        side = 1.0 if float(np.dot(along, _along_wall(inward, 1.0))) >= 0.0 else -1.0
+    else:
+        along = _along_wall(inward, side)
+    return along, side
 
 
 def _off_wall(robot, cmd: Cmd, margin: float) -> Cmd:
@@ -268,7 +370,10 @@ def _off_wall(robot, cmd: Cmd, margin: float) -> Cmd:
     )
 
 
-def _steer(robot, cmd: Cmd, tray: np.ndarray, margin: float, *, deliver: bool = False) -> Cmd:
+def _steer(
+    robot, cmd: Cmd, tray: np.ndarray, margin: float, *,
+    deliver: bool = False, wall_side: float | None = None,
+) -> tuple[Cmd, float | None]:
     """Bend a velocity off the can and the walls.
 
     The keep-out is the feet, not the trunk. A command aimed through the can
@@ -281,12 +386,15 @@ def _steer(robot, cmd: Cmd, tray: np.ndarray, margin: float, *, deliver: bool = 
 
     The gap between the can and a wall is the other exception, deliver
     included. Each keep-out's way out is the other's obstacle, and a carry
-    that has reached the back of the can otherwise stands there.
+    that has reached the back of the can otherwise stands there. He walks
+    along the wall there, keeping ``wall_side``, and the returned side is
+    the one to store. ``None`` means the caller should leave its side as it is.
     """
     pos, yaw, _ = _base(robot)
-    side = _pocket_exit(pos[:2], tray)
-    if side is not None:
-        return _walk_out(yaw, side)
+    pocket = _pocket_exit(pos[:2], tray, wall_side)
+    if pocket is not None:
+        direction, side = pocket
+        return _follow(yaw, direction), side
     cmd = _off_wall(robot, cmd, margin)
     vx, vy, wz = cmd
     gap, outward = _round_gap(pos[:2], tray, _can_half())
@@ -295,13 +403,13 @@ def _steer(robot, cmd: Cmd, tray: np.ndarray, margin: float, *, deliver: bool = 
     into = float(np.dot(world, -outward))
     if deliver:
         if gap < 0.04:
-            return _walk_out(yaw, outward)
-        return cmd
+            return _walk_out(yaw, outward), None
+        return cmd, None
     foot_gap = gap - FOOT_REACH
     if foot_gap < 0.0:
-        return _walk_out(yaw, outward)
+        return _walk_out(yaw, outward), None
     if foot_gap >= CAN_CLEAR or into <= 0.0:
-        return cmd
+        return cmd, None
     world = world + outward * into
     tangent = np.array([-outward[1], outward[0]])
     if float(np.dot(world, tangent)) < 0.0:
@@ -321,5 +429,5 @@ def _steer(robot, cmd: Cmd, tray: np.ndarray, margin: float, *, deliver: bool = 
     face = math.atan2(float(world[1]), float(world[0]))
     yaw_err = _wrap(face - yaw)
     if abs(yaw_err) > 0.55:
-        return (0.0, 0.0, float(np.clip(1.2 * yaw_err, -1.0, 1.0)))
-    return _body_cmd(yaw, world, float(np.clip(yaw_err, -0.8, 0.8)))
+        return (0.0, 0.0, float(np.clip(1.2 * yaw_err, -1.0, 1.0))), None
+    return _body_cmd(yaw, world, float(np.clip(yaw_err, -0.8, 0.8))), None

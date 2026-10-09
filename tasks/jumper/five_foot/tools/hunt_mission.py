@@ -27,22 +27,26 @@ from tasks.jumper.five_foot.tools.grasp_objects import FOLLOWED
 from tasks.jumper.five_foot.tools.hunt_motion import (
     LOOK_RANGE,
     SPOT_RANGE,
+    SKIRT_BAND,
     WALL_BODY,
     WALL_CLAW,
     WALL_FREE,
     Cmd,
     _base,
     _body_bearing,
+    _choose_side,
     _into,
     _off_wall,
     _root,
+    _skirt,
     _steer,
-    _walk_out,
+    _turn_off_wall,
     _wall_gap,
     _wrap,
     camera_look,
     in_tray,
     in_view,
+    looks_at_wall,
     over_tray,
 )
 from tasks.jumper.five_foot.tools.hunt_scene import CAN_WALL_H
@@ -80,10 +84,9 @@ LIN_LIM = 0.5
 ANG_LIM = 2.0
 
 SEARCH_VX = 0.18
-#: A search walks, then stops and turns in place, so the camera sweeps
-#: ground it would otherwise walk past. Seconds.
-SEARCH_WALK_S = 4.0
-SEARCH_TURN_S = 1.6
+#: How close a remembered bug has to be before a search that still cannot
+#: see it gives up on that spot.
+RECALL_REACH = 0.25
 #: Extra shoulder travel, past the carry lift, once the bug is at the can.
 #: The carry lift leaves the mouth about level with the rim, and the jaws
 #: meet the wood instead of clearing it.
@@ -312,6 +315,11 @@ class Hunt:
     age: int = 0
     search_s: float = 0.0
     delivered: set[str] = field(default_factory=set)
+    #: Bug name to the last xy the camera saw, for a bug he is not already chasing.
+    noted: dict[str, np.ndarray] = field(default_factory=dict)
+    #: +1 or -1, which way he is walking along the current wall. Kept until
+    #: he is clear, so the skirt does not reverse him back into the face.
+    wall_side: float | None = None
     hold_yaw: float = 0.0
     seat_xy: np.ndarray = field(default_factory=lambda: np.zeros(2))
     lift_sign: float = LIFT_SIGN
@@ -416,6 +424,7 @@ def _face_or_chase(hunt: Hunt, name: str, point: np.ndarray, bearing: float) -> 
     hunt.bug = name
     hunt.seen = point.copy()
     hunt.looked = False
+    hunt.noted.pop(name, None)
     hunt.go("approach")
     return None
 
@@ -439,6 +448,86 @@ def _sight(env, hunt: Hunt, robot, model) -> tuple[Cmd, float] | None:
     return (STOP if faced is None else faced), 0.0
 
 
+def _note_others(env, hunt: Hunt, model) -> None:
+    """Store any bug the camera can see that is not the one already in hand.
+
+    The chase does not switch. After the current bug is delivered, search
+    walks back to the stored spot.
+    """
+    robot = env.scene["robot"]
+    origin, look, half = camera_look(robot, model)
+    # During a search the closest bug in frame is the one he will chase.
+    # Remember the others, not that one.
+    busy = hunt.bug if hunt.bug is not None else _spot(env, hunt, model)
+    for name in hunt.bugs:
+        if name == busy or _in_can(env, hunt, name):
+            hunt.noted.pop(name, None)
+            continue
+        point = _root(env.scene[name])
+        if not in_view(origin, look, half, point):
+            continue
+        if name not in hunt.noted:
+            print(f"[hunt] remembered {name} at ({point[0]:+.2f}, {point[1]:+.2f})")
+        hunt.noted[name] = point[:2].copy()
+
+
+def _nearest_note(env, hunt: Hunt, robot) -> str | None:
+    pos, _, _ = _base(robot)
+    best, best_d = None, math.inf
+    for name in list(hunt.noted):
+        if _in_can(env, hunt, name):
+            hunt.noted.pop(name, None)
+            continue
+        xy = hunt.noted[name]
+        dist = float(np.hypot(xy[0] - pos[0], xy[1] - pos[1]))
+        if dist < best_d:
+            best, best_d = name, dist
+    return best
+
+
+def _recall(hunt: Hunt, robot, name: str) -> tuple[Cmd, float] | None:
+    """Walk face-front to a spot remembered during another grab.
+
+    ``None`` means he reached it and the camera still does not have the bug,
+    so the note is dropped and the search carries on.
+    """
+    xy = hunt.noted[name]
+    pos, yaw, _ = _base(robot)
+    dist = float(np.hypot(xy[0] - pos[0], xy[1] - pos[1]))
+    if dist < RECALL_REACH:
+        print(f"[hunt] {name} was not at the remembered spot")
+        hunt.noted.pop(name, None)
+        return None
+    face = math.atan2(xy[1] - pos[1], xy[0] - pos[0])
+    turn = _wrap(face - yaw)
+    if abs(turn) > 0.40:
+        return (0.0, 0.0, float(np.clip(1.2 * turn, -1.0, 1.0))), LOOK_DOWN
+    return (0.16, 0.0, float(np.clip(turn, -0.5, 0.5))), LOOK_DOWN
+
+
+def _search_move(hunt: Hunt, xy: np.ndarray, yaw: float, inward: np.ndarray, gap: float) -> Cmd:
+    """Spiral in the open, and bend along the wall as it gets close.
+
+    The side along the wall is chosen once and kept, so leaving one wall
+    does not turn him straight back into it.
+    """
+    radius = 0.35 + 0.04 * hunt.search_s
+    spiral_wz = SEARCH_VX / radius
+    if gap >= SKIRT_BAND:
+        hunt.wall_side = None
+        return (SEARCH_VX, 0.0, spiral_wz)
+    hunt.wall_side = _choose_side(yaw, inward, hunt.wall_side, xy)
+    skirt = _skirt(yaw, inward, hunt.wall_side)
+    if gap < WALL_BODY:
+        return skirt
+    blend = (SKIRT_BAND - gap) / (SKIRT_BAND - WALL_BODY)
+    return (
+        (1.0 - blend) * SEARCH_VX + blend * skirt[0],
+        0.0,
+        (1.0 - blend) * spiral_wz + blend * skirt[2],
+    )
+
+
 def _search(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     del arm
     if len(hunt.delivered) == len(hunt.bugs):
@@ -455,23 +544,21 @@ def _search(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
         return STOP, 0.0
     if hinted is None:
         hunt.looked = False
+    noted = _nearest_note(env, hunt, robot)
+    if noted is not None:
+        recalled = _recall(hunt, robot, noted)
+        if recalled is not None:
+            return recalled
     pos, yaw, _ = _base(robot)
     gap, inward = _wall_gap(pos[:2])
-    if gap < WALL_BODY:
-        # The spiral's yaw shrinks as the search goes on. Against a wall,
-        # the keep-out drops the forward step and that yaw is all that is
-        # left, so the crab stands looking at the face. Face the room and walk.
-        return _walk_out(yaw, inward), 0.0
+    origin, look, _half = camera_look(robot, model)
+    if looks_at_wall(origin, look):
+        # The camera is on the wall and no bug is in view. Turn along the
+        # wall until the floor is in frame again.
+        hunt.wall_side = _choose_side(yaw, inward, hunt.wall_side, pos[:2])
+        return _turn_off_wall(yaw, inward, hunt.wall_side), LOOK_DOWN
     hunt.search_s += float(env.step_dt)
-    cycle = SEARCH_WALK_S + SEARCH_TURN_S
-    phase = hunt.search_s % cycle
-    if phase >= SEARCH_WALK_S:
-        # Stop and turn. The direction flips each cycle so it does not
-        # only ever look one way.
-        direction = 1.0 if int(hunt.search_s / cycle) % 2 == 0 else -1.0
-        return (0.0, 0.0, direction * 0.9), LOOK_DOWN
-    radius = 0.35 + 0.04 * hunt.search_s
-    return (SEARCH_VX, 0.0, SEARCH_VX / radius), LOOK_DOWN
+    return _search_move(hunt, pos[:2], yaw, inward, gap), LOOK_DOWN
 
 
 def _scan(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
@@ -863,10 +950,15 @@ def tick(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     # Search, approach and the carry all aim through the can. One steer at
     # the end is what keeps the trunk off it, whichever state asked to walk.
     margin = WALL_CLAW if hunt.state == "creep" else WALL_BODY
-    cmd = _steer(
+    cmd, side = _steer(
         robot, cmd, _root(env.scene["tray"])[:2], margin,
         deliver=hunt.state in ("carry", "drop"),
+        wall_side=hunt.wall_side,
     )
+    if side is not None:
+        hunt.wall_side = side
+    # Other bugs in frame are stored, not chased. The one in hand stays the target.
+    _note_others(env, hunt, model)
     # The gripper event runs during the step and, once a key has been touched,
     # writes the trigger. A trigger at rest is open, which is a drop wherever
     # the robot happens to be. Pin the finger to what this step asked for.
