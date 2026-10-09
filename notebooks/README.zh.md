@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:c173525c258db1c8 -->
+<!-- tracks: README.md @ sha256:97de54ec0293d69c -->
 
 # 在 Colab 上运行 Jumper
 
@@ -6,10 +6,6 @@
 · [English](README.md) · [完整指南](../docs/COLAB.zh.md)
 
 用 Colab GPU 训练，查看曲线，在 MuJoCo 中回放策略，再下载结果。你的电脑只需要浏览器。
-
-合并前使用 [PR 预览](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb)。
-开始新训练时，在高级源码设置中选择 `https://github.com/tianrking/jumper.git` 和
-`codex/colab-training-and-video`。正式入口和默认值使用上游 `main`。
 
 ## 开始使用
 
@@ -48,10 +44,9 @@
 https://github.com/user-attachments/assets/e0e3b700-d1f6-486f-be20-98d4b69639ea
 
 该会话完成了训练、视频与关节记录、标量导出、ONNX、ZIP 备份、恢复和再训练五次。
-ZIP 约 116 MiB。恢复这份旧备份时，打开[该提交的 Notebook](https://colab.research.google.com/github/tianrking/jumper/blob/19e8f4d54751bccf34c5a336d46b5b8d27afe8f7/notebooks/jumper_colab.ipynb)，
-使用 `tianrking/jumper` 中记录的 `19e8f4d` 源码。当前 Notebook 需要新版流程接口，
-会拒绝这份旧源码。
+ZIP 约 116 MiB。它是用合入前的旧版 Notebook 做出来的，留在这里是作为那次运行的记录，
+而不是当前 Notebook 能恢复的备份。
 
 新版的新训练和续训路径也已在真实 T4 上通过，包括 ZIP 设置、保留检查点选择、四种固定
 命令评估和导出。另一次真实 SIGINT 中断已完成备份、恢复和再训练，详见
-[完整指南](../docs/COLAB.zh.md#验证边界)。
+[完整指南](../docs/COLAB.zh.md#实际验证过什么)。

@@ -24,7 +24,7 @@ from types import SimpleNamespace
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("colab_helpers", REPO / "rl/mjrl/colab.py")
+SPEC = importlib.util.spec_from_file_location("colab_helpers", REPO / "tools/colab.py")
 assert SPEC is not None and SPEC.loader is not None
 colab = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(colab)
@@ -325,7 +325,7 @@ def test_notebook_has_plain_python_cells_and_runs_repo_scripts_in_isolated_proce
     assert 'system_site_packages=False' in source
     assert 'PYTHON, "scripts/play.py"' in source
     assert 'PYTHON, "scripts/export.py"' in source
-    assert 'PYTHON, "-m", "mjrl.colab", "train"' in source
+    assert 'PYTHON, "tools/colab.py", "train"' in source
     assert '"--iterations", "5"' in source and 'str(min(NUM_ENVS, 256))' in source
     assert '"--backend", "warp", "--device", "cuda:0"' in source
     assert '"--physics-hz", "200"' in source

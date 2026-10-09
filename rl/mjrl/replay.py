@@ -35,12 +35,107 @@ whoever asks first, the posture clock fails it at step 0.
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import math
 from functools import partial
 from pathlib import Path
 
-__all__ = ["FixedCommandEvaluation", "configure_velocity_replay", "skip_rewards"]
+__all__ = [
+    "FixedCommandEvaluation",
+    "configure_velocity_replay",
+    "load_command_script",
+    "script_commands",
+    "skip_rewards",
+]
+
+
+def load_command_script(spec: str):
+    """`FILE[:NAME]` -> the callable `NAME` (default `script`) defined in `FILE`.
+
+    The file is loaded by path, not imported by name: a clip's script lives next
+    to whatever draws the clip (`tools/readme_media.py`), which is not a package.
+    """
+    path, sep, name = spec.rpartition(":")
+    if not sep or not name.isidentifier():
+        path, name = spec, "script"
+    file = Path(path)
+    if not file.is_file():
+        raise ValueError(f"no command script at {file}")
+    loader = importlib.util.spec_from_file_location(f"_mjrl_command_script_{file.stem}", file)
+    if loader is None or loader.loader is None:
+        raise ValueError(f"{file} is not a Python file")
+    module = importlib.util.module_from_spec(loader)
+    loader.loader.exec_module(module)
+    script = getattr(module, name, None)
+    if not callable(script):
+        raise TypeError(f"{file} defines no callable {name!r}")
+    return script
+
+
+def script_commands(env, script) -> list[str]:
+    """Have command terms hold what `script` says, from each term's own `compute` on.
+
+    `script(t)` returns `{term name: values}` for `t` seconds since this was
+    installed; it is written into each named term **after** the term's own
+    `compute`, which is where the operator writes -- so a pad that is plugged in
+    and nudged does not drive a scripted term, and the term's own bookkeeping
+    (metrics, resample timers, the posture term's walking band) still runs.
+
+    Two kinds of term are understood, the two the operator drives: a velocity
+    command (`vel_command_b`, three values) and jumper.posture's posture command
+    (`posture_command`, four). A posture's height may be NaN, the term's own
+    neutral height, or `(height, share)`, that share of the way there from it.
+    """
+    import torch
+
+    step_dt = env.step_dt
+    origin = env.common_step_counter
+    first = script(0.0)
+    if not isinstance(first, dict) or not first:
+        raise TypeError("a command script returns {term name: values}, and this one returned "
+                        f"{type(first).__name__}")
+    names = list(first)
+    for name in names:
+        try:
+            term = env.command_manager.get_term(name)
+        except KeyError:
+            raise ValueError(f"the task has no command term {name!r} to script") from None
+        if not hasattr(term, "posture_command") and not hasattr(term, "vel_command_b"):
+            raise ValueError(f"command term {name!r} is neither a velocity nor a posture "
+                             "command; a script cannot drive it")
+        _install(term, name, script, env, origin, step_dt, torch)
+    return names
+
+
+def _install(term, name, script, env, origin, step_dt, torch) -> None:
+    compute = term.compute
+
+    def scripted(dt, env_ids=None):
+        compute(dt, env_ids)
+        t = (env.common_step_counter - origin) * step_dt
+        values = list(script(t)[name])
+        if hasattr(term, "posture_command"):
+            rest = term.cfg.neutral_height
+            height = values[3]
+            if isinstance(height, tuple):
+                values[3] = rest + (height[0] - rest) * height[1]
+            elif math.isnan(height):
+                values[3] = rest
+            term.posture_command[:] = torch.tensor(
+                values, device=term.device, dtype=torch.float32
+            )
+            term.hold_to_band()
+            return
+        columns = term.command.shape[1]
+        if len(values) != columns:
+            raise ValueError(f"a script of {len(values)} values for {name!r}, a command of "
+                             f"{columns}")
+        term.vel_command_b[:] = torch.tensor(values, device=term.device, dtype=torch.float32)
+        if hasattr(term, "vel_command_w"):
+            term.vel_command_w[:] = term.vel_command_b
+
+    term.compute = scripted
 
 
 def configure_velocity_replay(env_cfg, training_cfg, checkpoint: dict,

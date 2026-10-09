@@ -37,11 +37,20 @@ default mode's unless `--task` names another. See `mjrl/app_play.py`.
 
     python scripts/play.py --app out/bundle_<timestamp>/<name>.app
 
-Record simulation-time MP4 without a display (Linux GPU runtimes need
-``MUJOCO_GL=egl`` set before starting Python):
+`--video` records an MP4, with or without a window (a Linux GPU runtime
+without a display needs ``MUJOCO_GL=egl`` set before Python starts):
 
     python scripts/play.py --checkpoint <path>/model_N.pt --headless \
         --steps 500 --video replay.mp4 --video-fps 30
+
+**It is the one MP4 recorder** (`mjrl/viewer/video.py`): the README clips, the
+dance export and the Colab notebook all run this command rather than drawing for
+themselves. The camera is placed from the robot's first frame (`--video-azimuth`,
+`--video-elevation`, `--no-video-follow`), `--stop-on-done` records one attempt
+of a one-shot motion rather than looping it, and `--command-script` hands the
+command terms a script of time where the README clips need a walk that starts and
+a posture that changes -- written where the operator writes, so the pad does not
+drive a scripted term.
 """
 
 from __future__ import annotations
@@ -180,7 +189,19 @@ def main() -> None:
     v.add_argument("--video-env", type=int, default=0,
                    help="environment index to record (default: 0)")
     v.add_argument("--video-distance", type=float, default=None,
-                   help="optional tracking-camera distance in metres")
+                   help="optional camera distance in metres")
+    v.add_argument("--video-azimuth", type=float, default=None, metavar="DEG",
+                   help="camera azimuth in degrees from the way the recorded robot faces in "
+                   "the first frame: 0 looks along it from behind, 180 straight at its "
+                   "front. Default: the task viewer's, in the world")
+    v.add_argument("--video-elevation", type=float, default=None, metavar="DEG",
+                   help="camera elevation in degrees, negative looking down "
+                   "(default: the task viewer's)")
+    v.add_argument("--video-follow", action=argparse.BooleanOptionalAction, default=True,
+                   help="follow the robot over the ground (default); --no-video-follow leaves "
+                   "the camera where the first frame put it, for a motion that stays put")
+    v.add_argument("--video-lookat-height", type=float, default=None, metavar="M",
+                   help="height of the point a fixed camera looks at; needs --no-video-follow")
 
     r = parser.add_argument_group("replay")
     r.add_argument(
@@ -209,6 +230,14 @@ def main() -> None:
                    "requires --command and finite positive --steps")
     r.add_argument("--replay-info-out", type=Path, metavar="JSON",
                    help="write resolved replay command ranges, source and simulation rates")
+    r.add_argument("--command-script", metavar="FILE[:NAME]",
+                   help="a Python file whose NAME(t) (default: script) returns {command term: "
+                   "values} for t seconds into the replay, written into each term after its "
+                   "own compute, where the operator writes; the pad and the keyboard do not "
+                   "drive a scripted term. See mjrl.replay.script_commands")
+    r.add_argument("--stop-on-done", action="store_true",
+                   help="stop at the first episode end rather than replaying the next attempt, "
+                   "so a recording of a one-shot motion holds one attempt")
     r.add_argument(
         "--physics-hz", type=float, default=1000.0, metavar="HZ",
         help="physics rate for replay, **independent of the control rate**. The "
@@ -334,12 +363,28 @@ def _validate_video_args(parser, args) -> None:
         not math.isfinite(args.video_distance) or args.video_distance <= 0
     ):
         parser.error("--video-distance must be finite and positive")
+    for flag in ("video_azimuth", "video_elevation", "video_lookat_height"):
+        value = getattr(args, flag)
+        if value is not None and not math.isfinite(value):
+            parser.error(f"--{flag.replace('_', '-')} must be finite")
+    if args.video_lookat_height is not None and args.video_follow:
+        parser.error("--video-lookat-height needs --no-video-follow: a following camera "
+                     "looks at the body")
 
 
 def _validate_command_args(parser, args) -> None:
     requested = args.checkpoint_command_ranges or args.command is not None or args.evaluation_out
     if requested and (args.app is not None or args.agent != "trained"):
         parser.error("fixed commands and checkpoint command ranges require a trained checkpoint")
+    if args.command_script is not None:
+        if args.app is not None:
+            parser.error("--command-script scripts a task's command terms; an app's modes "
+                         "take their commands from the app")
+        if args.command is not None:
+            parser.error("--command and --command-script would both write the command")
+        path = args.command_script.rpartition(":")[0] or args.command_script
+        if not Path(path).is_file() and not Path(args.command_script).is_file():
+            parser.error(f"--command-script: no such file: {args.command_script}")
     if args.command is not None and not all(math.isfinite(x) for x in args.command):
         parser.error("--command must contain three finite values")
     if args.evaluation_out is not None and (
@@ -459,6 +504,15 @@ def _run(spec, res, asset: Path | None, args) -> None:
                     return torch.zeros(shape, device=env.device)
                 return 2 * torch.rand(shape, device=env.device) - 1
 
+        if args.command_script is not None:
+            from mjrl.replay import load_command_script, script_commands
+
+            try:
+                scripted = script_commands(env, load_command_script(args.command_script))
+            except (TypeError, ValueError) as error:
+                raise SystemExit(f"[mjrl] command script: {error}") from None
+            print(f"[mjrl] scripted commands: {', '.join(scripted)} (the pad does not drive them)")
+
         # Built before the viewer, so a missing plotting backend is reported
         # while the terminal is still readable rather than behind a window.
         # `out` is the checkpoint's own directory: the measurement describes that
@@ -480,6 +534,8 @@ def _run(spec, res, asset: Path | None, args) -> None:
                     env, args.video, fps=args.video_fps,
                     width=args.video_width, height=args.video_height,
                     env_index=args.video_env, camera_distance=args.video_distance,
+                    azimuth=args.video_azimuth, elevation=args.video_elevation,
+                    lookat_height=args.video_lookat_height, follow=args.video_follow,
                 )
                 video.__enter__()
             # Real time when someone is watching. `--headless` is the audit path
@@ -500,7 +556,8 @@ def _run(spec, res, asset: Path | None, args) -> None:
                 args.evaluation_out is not None
             ) else None
             completed_steps = _loop(wrapped, policy, viewer, args.steps, speed,
-                                    status or _speed_text, monitor, video, evaluation)
+                                    status or _speed_text, monitor, video, evaluation,
+                                    stop_on_done=args.stop_on_done)
             replay_metadata = {
                 "task": spec.id, "checkpoint": str(ckpt.resolve()) if ckpt else None,
                 "physics_hz": 1.0 / env_cfg.sim.mujoco.timestep,
@@ -601,8 +658,14 @@ def _speed_text(entity, index: int, env) -> str:
 
 
 def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
-          readout=_speed_text, monitor=None, video=None, evaluation=None) -> int:
+          readout=_speed_text, monitor=None, video=None, evaluation=None,
+          stop_on_done: bool = False) -> int:
     """Step the environment under the policy until the window closes.
+
+    Returns the number of control steps taken. With `stop_on_done` the loop ends
+    at the first episode end -- before the recorder and the monitor see the
+    post-reset state the wrapper hands back on that step, which is the next
+    attempt and not this one.
 
     The loop lives here rather than inside the viewer so that headless replay --
     for recording metrics, or on a machine with no display -- runs the same code
@@ -645,6 +708,10 @@ def _loop(env, policy, viewer, max_steps: int | None, speed: float = 1.0,
         pacer.wait()
         with torch.inference_mode():
             obs, _, dones, _ = env.step(policy(obs))
+        if stop_on_done and bool(dones.any()):
+            step += 1
+            print(f"\n[mjrl] the episode ended at step {step}; stopping (--stop-on-done)")
+            break
         if evaluation is not None:
             evaluation.update(dones)
         # After the step, so the telemetry is the state the picture is showing

@@ -6,10 +6,6 @@
 Train with a Colab GPU, inspect the curves, replay the policy in MuJoCo, and
 download the results. Your computer only needs a browser.
 
-Before merge, use the [PR preview](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb).
-For new training, set the advanced source settings to `https://github.com/tianrking/jumper.git`
-and `codex/colab-training-and-video`. The main link and defaults use the upstream `main`.
-
 ## Start here
 
 Save a notebook copy and select a GPU runtime. Choose one route:
@@ -54,12 +50,11 @@ the gait has converged.
 https://github.com/user-attachments/assets/e0e3b700-d1f6-486f-be20-98d4b69639ea
 
 That session completed training, video and joint recording, scalar export, ONNX,
-ZIP backup, restore and five further iterations. Its ZIP was about 116 MiB. To
-restore this older backup, open the [notebook from that commit](https://colab.research.google.com/github/tianrking/jumper/blob/19e8f4d54751bccf34c5a336d46b5b8d27afe8f7/notebooks/jumper_colab.ipynb)
-and use its recorded `19e8f4d` source in `tianrking/jumper`. The current notebook
-requires the newer workflow interface and refuses that older source.
+ZIP backup, restore and five further iterations. Its ZIP was about 116 MiB. It was
+made with an earlier version of this notebook, before merge, and is kept here as
+the record of the run rather than as a backup the current notebook restores.
 
 The updated new-training and continuation routes also passed on a real T4,
 including ZIP settings, retained checkpoint selection, four fixed-command cases
 and exports. A separate real SIGINT interruption was backed up, restored and
-trained further; details are in the [full guide](../docs/COLAB.md#validation-boundary).
+trained further; details are in the [full guide](../docs/COLAB.md#what-was-validated).

@@ -1,9 +1,29 @@
 """Stream a replay to MP4, sampling control steps in simulation time.
 
+**This is the repository's one MP4 recorder.** `scripts/play.py --video` drives
+it, and everything that wants a picture of a policy -- the README clips
+(`tools/readme_media.py`), the dance export (`tasks/jumper/dance/export_media.py`),
+the Colab notebook -- runs `play --video` rather than drawing for itself. There
+were once three renderers, each with its own camera and its own idea of which
+geoms to hide, and a difference between two of them read as a difference between
+two policies.
+
 Call ``update()`` once after each environment step. The initial state is written
 on entering the context. When the requested FPS exceeds the control frequency,
 the latest state is repeated; no intermediate physics states are invented.
 Set ``MUJOCO_GL=egl`` before importing MuJoCo on a headless Linux GPU runtime.
+
+## The camera
+
+Placed relative to the recorded robot's **first frame**, not the world: a reset
+turns the robot to a heading of its own, and a camera placed in the world showed
+the front of one clip and the back of the next. `azimuth` is degrees from the way
+the robot faces (0 looks along it from behind, 180 straight at its front). The
+camera follows the body over the ground unless `follow=False`, which leaves it
+where the first frame put it, looking at `lookat_height` -- for a motion that
+stays where it is, where a camera that moved would add motion the policy did not
+make. A following camera looks at the body's centre of mass and ignores
+`lookat_height`.
 """
 
 from __future__ import annotations
@@ -112,21 +132,60 @@ class _ReplayRenderer(OffscreenRenderer):
         super()._sync_data_fields(data, env_idx)
 
 
-def _camera_config(env, model, *, width, height, env_index, camera_distance):
+def _recorded_entity(env):
+    """The entity the camera is about: the actuated one, or the only one."""
+    entities = env.scene.entities
+    robot = next((name for name, entity in entities.items()
+                  if getattr(entity, "num_actuators", 0)), None)
+    if robot is None and len(entities) == 1:
+        robot = next(iter(entities))
+    return robot
+
+
+def _first_pose(env, env_index):
+    """`(x, y, z, heading in degrees)` of the recorded entity, or None without one.
+
+    Read before the first frame is drawn: the camera is placed from it. World
+    coordinates, which is what the renderer draws the selected environment in.
+    """
+    robot = _recorded_entity(env)
+    if robot is None:
+        return None
+    pose = env.scene.entities[robot].data.root_link_pose_w[env_index].detach().cpu().numpy()
+    w, x, y, z = (float(v) for v in pose[3:7])
+    heading = math.degrees(math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+    return (float(pose[0]), float(pose[1]), float(pose[2]), heading)
+
+
+def _camera_config(env, model, *, width, height, env_index, camera_distance,
+                   azimuth=None, elevation=None, lookat_height=None, follow=True,
+                   pose=None):
+    """The viewer config the recorder draws with; see the module docstring.
+
+    `pose` is `_first_pose`'s. Without one, `azimuth` is in the world, and a fixed
+    camera cannot be placed: it is refused rather than pointed at the origin.
+    """
     cfg = copy.deepcopy(getattr(getattr(env, "cfg", None), "viewer", ViewerConfig()))
     cfg.width, cfg.height = width, height
     cfg.env_idx, cfg.max_extra_envs = env_index, 0
     if camera_distance is not None:
         cfg.distance = camera_distance
     if cfg.origin_type == ViewerConfig.OriginType.AUTO:
-        entities = env.scene.entities
-        robot = next((name for name, entity in entities.items()
-                      if getattr(entity, "num_actuators", 0)), None)
-        if robot is None and len(entities) == 1:
-            robot = next(iter(entities))
+        robot = _recorded_entity(env)
         if robot is not None:
             cfg.origin_type = ViewerConfig.OriginType.ASSET_ROOT
             cfg.entity_name = robot
+    if azimuth is not None:
+        cfg.azimuth = (pose[3] if pose is not None else 0.0) + azimuth
+    if elevation is not None:
+        cfg.elevation = elevation
+    if not follow:
+        if pose is None:
+            raise ValueError("A fixed camera needs a recorded entity to be placed from")
+        # A free camera at the first frame's position. MuJoCo's tracking camera
+        # would otherwise move the picture with every sway of the body.
+        cfg.origin_type = ViewerConfig.OriginType.WORLD
+        cfg.lookat = (pose[0], pose[1], pose[2] if lookat_height is None else lookat_height)
     stripped = getattr(env.sim, "visuals_stripped", False) and model is env.sim.mj_model
     if stripped:
         cfg.geom_group = (1, 1, 1, 1, 1, 1)
@@ -147,7 +206,8 @@ class ReplayVideo:
     """
 
     def __init__(self, env, path, *, fps=30, width=640, height=480,
-                 env_index=0, camera_distance=None):
+                 env_index=0, camera_distance=None, azimuth=None, elevation=None,
+                 lookat_height=None, follow=True):
         self._env = getattr(env, "unwrapped", env)
         self.path = Path(path)
         if self.path.suffix.lower() != ".mp4":
@@ -163,6 +223,14 @@ class ReplayVideo:
             not math.isfinite(camera_distance) or camera_distance <= 0
         ):
             raise ValueError("Video camera distance must be finite and positive")
+        for name, value in (("azimuth", azimuth), ("elevation", elevation),
+                            ("lookat height", lookat_height)):
+            if value is not None and not math.isfinite(value):
+                raise ValueError(f"Video camera {name} must be finite")
+        if lookat_height is not None and follow:
+            raise ValueError("A following camera looks at the body; lookat_height needs follow=False")
+        self._camera = {"azimuth": azimuth, "elevation": elevation,
+                        "lookat_height": lookat_height, "follow": bool(follow)}
         self.fps = float(fps)
         self._dt = float(self._env.step_dt)
         if not math.isfinite(self._dt) or self._dt <= 0:
@@ -186,6 +254,7 @@ class ReplayVideo:
             cfg = _camera_config(
                 self._env, model, width=self._width, height=self._height,
                 env_index=self._env_index, camera_distance=self._camera_distance,
+                pose=_first_pose(self._env, self._env_index), **self._camera,
             )
             self._renderer = _ReplayRenderer(sim, cfg, self._env.scene)
             self._renderer.initialize()

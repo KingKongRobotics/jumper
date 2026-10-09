@@ -842,8 +842,9 @@ def main() -> None:
     elif args.mode == "inspect":
         atomic_json(args.out, inspect_backup(args.archive))
     else:
-        import tasks
         from mjrl.dotenv import load_dotenv
+
+        import tasks
 
         load_dotenv(args.repo / ".env", args.repo / ".env.local")
         asset = tasks.get(args.task).resolve_asset(args.model)
