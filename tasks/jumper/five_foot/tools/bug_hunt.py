@@ -11,7 +11,8 @@ training task and not a deploy app. The soap row (``--objects``) is untouched.
 
 Bugs are still. Their poses are read only to test whether they lie in the
 onboard camera's forward cone, out to 1.2 m. The tray is a fixture, so its
-pose is known the whole time. Nothing here is a furnished room, and nothing
+pose is known the whole time. The ground is a walled room: the floor the
+policy walks on stays a plane, drawn finite, with walls at its edge. Nothing
 moves except the robot and whatever the claw pushes.
 
 The arm pose and the lift below are from ``--probe`` (native CPU, one
@@ -30,10 +31,11 @@ negative direction.
 
 Grasping is friction, under ``objects.py``'s elliptic cone. A squeeze on the
 training solver lets the bug creep out. Picked up means the bug rose at least
-``FOLLOWED`` of the way the anvil rose. Delivered means its origin is inside
-the tray walls and below the rim, scaled to this bug rather than to the can
-the tray's own threshold was sized for -- a bug still in the claw sits higher
-than that can's line and would otherwise count as already dropped.
+``FOLLOWED`` of the way the anvil rose. Delivered means the claw opened with
+the bug's origin inside the tray's footprint. The height line is only how
+long the open claw waits for it to fall: a bug in the can, stacked or still
+settling, sits above that line, and the search resumes beside the can, so
+the height test was retiring nothing and the same bug was the next target.
 """
 
 from __future__ import annotations
@@ -83,6 +85,15 @@ N_BUGS = 3
 
 #: Known fixture, to the robot's right, outside the forward cone at the spawn.
 TRAY_XY = (0.0, -1.15)
+
+#: The room, in metres. Bugs are scattered out to 1.35 m and the tray sits at
+#: 1.15 m, so a 4 m square holds both with a margin. The plane's collision is
+#: still infinite -- a mesh foot against a box is not the contact this policy
+#: trained on -- and these half-sizes are what it is drawn at. The walls are
+#: the boundary.
+ROOM_HALF = 2.0
+ROOM_WALL_H = 0.45
+ROOM_WALL_T = 0.04
 
 #: Onboard camera: a bug counts as seen inside this range. The cone's
 #: half-angle is half of ``cam_fovy``, read off the compiled model.
@@ -209,7 +220,43 @@ def add_hunt_scene(cfg, seed: int, n: int = N_BUGS) -> list[str]:
     cfg.sim.njmax = max(int(cfg.sim.njmax or 0), OBJECTS_NJMAX)
     cfg.sim.mujoco.cone = PROP_CONE
     cfg.sim.mujoco.impratio = PROP_IMPRATIO
+    _install_room(cfg)
     return names
+
+
+def _install_room(cfg) -> None:
+    """Draw the ground as a finite square and put walls on its edge."""
+    previous = cfg.scene.spec_fn
+
+    def spec_fn(spec):
+        if previous is not None:
+            previous(spec)
+        _bound_room(spec)
+
+    cfg.scene.spec_fn = spec_fn
+
+
+def _bound_room(spec) -> None:
+    plane = next((g for g in spec.geoms if g.name == "terrain"), None)
+    if plane is None or int(plane.type) != int(mujoco.mjtGeom.mjGEOM_PLANE):
+        raise RuntimeError("bug hunt expected a ground plane named terrain")
+    plane.size[0] = ROOM_HALF + ROOM_WALL_T
+    plane.size[1] = ROOM_HALF + ROOM_WALL_T
+    h, t, inner = ROOM_WALL_H, ROOM_WALL_T, ROOM_HALF
+    rgba = [0.62, 0.60, 0.56, 1.0]
+    # The end walls run the full side, thickness included, and the other pair
+    # sits between them so the corners meet without a gap.
+    for name, sx, sy, px, py in (
+        ("room_xp", t / 2, inner + t, inner + t / 2, 0.0),
+        ("room_xm", t / 2, inner + t, -inner - t / 2, 0.0),
+        ("room_yp", inner, t / 2, 0.0, inner + t / 2),
+        ("room_ym", inner, t / 2, 0.0, -inner - t / 2),
+    ):
+        spec.worldbody.add_geom(
+            name=name, type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=[sx, sy, h / 2], pos=[px, py, h / 2], rgba=rgba,
+            contype=1, conaffinity=1, group=2,
+        )
 
 
 def pin_spawn(cfg) -> None:
@@ -580,11 +627,29 @@ def _body_bearing(robot, point: np.ndarray) -> tuple[float, float]:
     return float(np.hypot(rel[0], rel[1])), math.atan2(rel[1], rel[0])
 
 
+def _in_can(env, hunt: Hunt, name: str) -> bool:
+    """True when ``name`` is done, including a bug sitting in the can.
+
+    Search starts beside the can, and the bug just dropped is the closest
+    one. ``in_tray`` also demands a height under the rim line, which a bug
+    in the can -- stacked, or still settling from the claw -- is above, so
+    that test left it eligible and the hunt turned straight back to it.
+    """
+    if name in hunt.delivered:
+        return True
+    if over_tray(_root(env.scene[name]), _root(env.scene["tray"])):
+        hunt.delivered.add(name)
+        print(f"[hunt] {name} is already in the tray "
+              f"({len(hunt.delivered)}/{len(hunt.bugs)})")
+        return True
+    return False
+
+
 def _near(env, hunt: Hunt, robot) -> str | None:
     """The closest bug on the floor nearby, whether or not the camera is on it."""
     best, best_d = None, LOOK_RANGE
     for name in hunt.bugs:
-        if name in hunt.delivered:
+        if _in_can(env, hunt, name):
             continue
         dist, _bearing = _body_bearing(robot, _root(env.scene[name]))
         if dist < best_d:
@@ -595,16 +660,11 @@ def _near(env, hunt: Hunt, robot) -> str | None:
 def _spot(env, hunt: Hunt, model) -> str | None:
     robot = env.scene["robot"]
     origin, look, half = camera_look(robot, model)
-    tray = _root(env.scene["tray"])
     best, best_d = None, SPOT_RANGE
     for name in hunt.bugs:
-        if name in hunt.delivered:
+        if _in_can(env, hunt, name):
             continue
         point = _root(env.scene[name])
-        if in_tray(point, tray):
-            hunt.delivered.add(name)
-            print(f"[hunt] {name} is already in the tray")
-            continue
         if not in_view(origin, look, half, point):
             continue
         dist = float(np.linalg.norm(point - origin))
@@ -797,15 +857,20 @@ def tick(env, hunt: Hunt, arm: Arm, model) -> None:
         arm.goal[1] = hunt.preset[1] + hunt.lift_sign * LIFT_RAD
         arm.finger = GRIPPER_OPEN
         bug = _root(env.scene[hunt.bug])
-        if in_tray(bug, _root(env.scene["tray"])):
-            hunt.delivered.add(hunt.bug)
-            print(f"[hunt] {hunt.bug} is in the tray "
-                  f"({len(hunt.delivered)}/{len(hunt.bugs)})")
+        tray = _root(env.scene["tray"])
+        # The footprint retires the bug. The height line only says the open
+        # claw has waited long enough to stow without snatching it back out.
+        inside = over_tray(bug, tray)
+        settled = in_tray(bug, tray) or (inside and hunt.age >= 25)
+        if settled or hunt.age > DROP_LIMIT:
+            if inside:
+                hunt.delivered.add(hunt.bug)
+                print(f"[hunt] {hunt.bug} is in the tray "
+                      f"({len(hunt.delivered)}/{len(hunt.bugs)})")
+            else:
+                print(f"[hunt] {hunt.bug} missed the tray")
             hunt.bug = None
-            hunt.go("stow")
-        elif hunt.age > DROP_LIMIT:
-            print(f"[hunt] {hunt.bug} missed the tray")
-            hunt.bug = None
+            hunt.seen = None
             hunt.go("stow")
     elif hunt.state == "stow":
         arm.goal = STOW.copy()
