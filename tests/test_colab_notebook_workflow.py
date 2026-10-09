@@ -21,7 +21,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("notebook_workflow_colab", REPO / "rl/mjrl/colab.py")
+SPEC = importlib.util.spec_from_file_location("notebook_workflow_colab", REPO / "tools/colab.py")
 assert SPEC is not None and SPEC.loader is not None
 colab = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(colab)

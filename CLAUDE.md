@@ -31,6 +31,7 @@ python scripts/train.py --list                          # every task and its ass
 python scripts/train.py --task jumper.flat --dry-run      # resolve without building anything
 python scripts/train.py --task jumper.flat --backend native --device cpu --num_envs 64
 python scripts/play.py --task jumper.flat                 # newest checkpoint
+python scripts/play.py --task jumper.flat --headless --steps 500 --video clip.mp4   # the one MP4 recorder
 python scripts/export.py --task jumper.flat --checkpoint <path>/model_4999.pt
 ```
 
@@ -43,13 +44,12 @@ python3 .claude/skills/deploy/scripts/check_board.py --host <user>@<board> --bun
 ./runtime/board/controller --bundle . --check-reference         # on the board; touches no bus
 ```
 
-An **export directory** is one policy; a **bundle** is what every host loads -- the FSM
-config, one policy per mode, and each host's controller build (the board's
-cross-compiled binary, the browser's wasm, `play --app`'s extension), in one directory
-and one `.app` from which each host takes its own part. The crate is the controller on
-all three hosts, so `controller` is the robot's whole program. Every bundle carries
-`manual.en.json`, the pad and the keyboard as the controller reads them; after each build the
-`bundle-manual` skill adds the Chinese one.
+An **export directory** is one policy; a **bundle** is what every host loads -- the FSM config,
+one policy per mode, and each host's controller build (the board's cross-compiled binary, the
+browser's wasm, `play --app`'s extension), in one directory and one `.app` from which each host
+takes its own part. The crate is the controller on all three hosts, so `controller` is the robot's
+whole program. Every bundle carries `manual.en.json`, the pad and the keyboard as the controller
+reads them; after each build the `bundle-manual` skill adds the Chinese one.
 
 Deployment failures are silent rather than loud -- a wrong joint order or an unmatched QoS
 profile gives a robot that runs and is wrong. The `deploy` skill sequences the whole path;
