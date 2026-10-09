@@ -632,10 +632,14 @@ def _approach(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
     else:
         pitch = LOOK_DOWN
         hunt.seen = point.copy()
+        # The claw stays stowed for the walk. It comes down in extend, once
+        # he has stopped. Lowering it on the way in stalls the gait: the
+        # policy was trained with the claw carried, and an arm in motion
+        # is not a walk it tracks.
         reach = max(float(hunt.seat_xy[0]), 0.18)
         if _dist > reach + 0.05:
             cmd = _off_wall(robot, (
-                0.16, 0.0, float(np.clip(bearing, -0.35, 0.35)),
+                0.28, 0.0, float(np.clip(bearing, -0.35, 0.35)),
             ), WALL_BODY)
         elif abs(bearing) > 0.25:
             cmd = _turn_to(bearing)
@@ -693,16 +697,31 @@ def _drag_off_wall(hunt: Hunt, arm: Arm, bearing: float) -> Cmd:
     return (-0.16, 0.0, float(np.clip(bearing, -0.4, 0.4)))
 
 
-def _step_to_seat(robot, flat: np.ndarray, gap: float, yaw_err: float, reach: float,
+def _seat_axes(flat: np.ndarray, wall_gap: float) -> tuple[float, float]:
+    """Forward and sideways together, each a full step if that axis is off.
+
+    Sharing one 0.18 across both axes left each one too small to start the
+    gait, which is why the mouth stopped beside the bug. An axis already
+    inside the seat tolerance contributes nothing. Backing up is open floor
+    only: against the wall it follows the bug into the face.
+    """
+    vx = 0.0
+    if float(flat[0]) > SEAT_TOL:
+        vx = 0.18
+    elif float(flat[0]) < -SEAT_TOL and wall_gap >= 0.20:
+        vx = -0.16
+    vy = 0.0
+    if abs(float(flat[1])) > SEAT_TOL:
+        vy = 0.18 if float(flat[1]) > 0.0 else -0.18
+    return vx, vy
+
+
+def _step_to_seat(robot, flat: np.ndarray, wall_gap: float, yaw_err: float, reach: float,
                   yaw_clip: float) -> Cmd:
     """One gait step toward the seat. Slower than this never starts the gait."""
-    direction = flat / max(gap, 1.0e-6)
+    vx, vy = _seat_axes(flat, wall_gap)
     wz = 0.0 if abs(yaw_err) < 0.15 else float(np.clip(yaw_err, -yaw_clip, yaw_clip))
-    return _off_wall(robot, (
-        float(np.clip(max(0.0, direction[0]) * 0.18, 0.0, 0.25)),
-        float(np.clip(direction[1] * 0.18, -0.20, 0.20)),
-        wz,
-    ), max(0.10, reach - 0.02))
+    return _off_wall(robot, (vx, vy, wz), max(0.10, reach - 0.02))
 
 
 def _creep_closed(env, hunt: Hunt, arm: Arm, robot, bug: np.ndarray) -> Cmd:
@@ -735,17 +754,16 @@ def _creep_closed(env, hunt: Hunt, arm: Arm, robot, bug: np.ndarray) -> Cmd:
         hunt.go("stow")
         return STOP
     yaw_err = _wrap(bearing) if wall_gap < 0.20 else _wrap(hunt.hold_yaw - yaw)
-    if gap < 0.08:
-        # A steady walk steps past, and a pulse shorter than a step only
-        # leans. One step is about 0.4 s at the speed the gait actually
-        # uses, then a pause so it can settle on the bug. Forward only:
-        # backing up is how a bug on the wall was followed into the face.
+    if gap < 0.04:
+        # Both axes, but in pulses. A steady walk this close steps past the
+        # bug. One step is about 0.4 s, then a short pause to settle.
         hunt.nudge += 1
-        if hunt.nudge % 60 < 20:
-            return _step_to_seat(robot, flat, gap, yaw_err, reach, 0.5)
-        return STOP
+        if hunt.nudge % 30 >= 20:
+            return STOP
+        vx, vy = _seat_axes(flat, wall_gap)
+        return _off_wall(robot, (vx, vy, 0.0), max(0.10, reach - 0.02))
     hunt.nudge = 0
-    return _step_to_seat(robot, flat, gap, yaw_err, reach, 0.6)
+    return _step_to_seat(robot, flat, wall_gap, yaw_err, reach, 0.6)
 
 
 def _creep(env, hunt: Hunt, arm: Arm, model) -> tuple[Cmd, float]:
