@@ -43,6 +43,13 @@ rl/rsl_rl/modules/normalization.py
     Copyright (c) 2020 Preferred Networks, Inc.
     MIT License -- licenses/pfrl.txt
 
+tasks/jumper/calligraphy/data/u*.json
+    Stroke data from Make Me a Hanzi (https://github.com/skishore/makemeahanzi),
+    graphics.txt, one character per file, copied verbatim; derived there from
+    Arphic PL KaitiM GB and Arphic PL UKai
+    Copyright (C) 1999 Arphic Technology Co., Ltd.
+    Arphic Public License -- tasks/jumper/calligraphy/data/ARPHICPL.TXT
+
 Not included in this repository
 
 deploy/fsm/vendor/rknpu2/
