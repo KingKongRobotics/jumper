@@ -190,7 +190,7 @@ class Plan:
 
     def label(self) -> str:
         """The text's code points, for titles and directory names: u65e0, u8df3-u8df3."""
-        return "-".join(f"u{ord(c):04x}" for c in self.character)
+        return label(self.character)
 
     def to_json(self) -> dict:
         return {
@@ -252,17 +252,32 @@ def plan_text(text: str, size: float = 0.30, origin: tuple[float, float] = (0.0,
 
     `vertical` reads top to bottom, the way 地书 is usually written -- the first
     character furthest along +x, where the robot starts facing; `horizontal` left
-    to right, along -y. Strokes keep the text's writing order and are numbered
-    through it; each knows its character (`Stroke.char`).
+    to right, along -y. A space between words leaves half a character's room.
+    Strokes keep the text's writing order and are numbered through it; each knows
+    its character (`Stroke.char`, counting characters only).
     """
     if layout not in ("vertical", "horizontal"):
         raise ValueError(f"layout {layout!r}: vertical or horizontal")
     pitch = size * (1.0 + gap)
+    at, chars = [], []
+    k = 0.0
+    for char in text.strip():
+        if char.isspace():
+            k += 0.5 if chars and k == at[-1] + 1.0 else 0.0
+            continue
+        at.append(k)
+        chars.append(char)
+        k += 1.0
     out = Plan(text, size, origin, ds)
-    for i, char in enumerate(text):
-        k = (len(text) - 1) / 2 - i
-        centre = ((origin[0] + k * pitch, origin[1]) if layout == "vertical"
-                  else (origin[0], origin[1] + k * pitch))
+    mid = (at[0] + at[-1]) / 2
+    for i, (char, a) in enumerate(zip(chars, at)):
+        centre = ((origin[0] + (mid - a) * pitch, origin[1]) if layout == "vertical"
+                  else (origin[0], origin[1] + (mid - a) * pitch))
         for s in plan(char, size, centre, ds).strokes:
             out.strokes.append(Stroke(len(out.strokes), s.xy, s.press, i))
     return out
+
+
+def label(text: str) -> str:
+    """Code points for directory names: u65e0, u8df3-u8df3, u8df3-u8df3_u4f60-u597d."""
+    return "_".join("-".join(f"u{ord(c):04x}" for c in word) for word in text.split())

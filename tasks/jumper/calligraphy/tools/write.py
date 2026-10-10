@@ -259,7 +259,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--text", "--char", dest="text", default="无",
-                    help="the character, or characters, to write: 无, 跳跳")
+                    help="the character, or characters, to write: 无, 跳跳, \"跳跳 你好\" "
+                         "(a space leaves half a character's room)")
     ap.add_argument("--layout", choices=("vertical", "horizontal"), default="vertical",
                     help="how several characters are laid out: top to bottom (the first "
                          "furthest ahead), or left to right")
@@ -312,7 +313,7 @@ def main() -> int:
     from tasks.jumper.five_foot.claw import ARM_JOINTS, LF_GRASP
 
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d_%H-%M-%S")
-    label = "-".join(f"u{ord(c):04x}" for c in args.text)
+    label = hanzi.label(args.text)
     out = args.out or REPO / "logs" / "calligraphy" / label / stamp
     out.mkdir(parents=True, exist_ok=True)
 
