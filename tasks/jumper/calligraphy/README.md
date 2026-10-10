@@ -51,6 +51,11 @@ python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3/<ru
   `none` changes the sky; `--no-outro` stops at the last stroke.
   A run with more than one or two seams (`grep SEAM`) is worth running again.
 
+- To make a video to post from a run -- the films at 1920 x 1080 (`render.py --size
+  1920x1080`), the moments to cut at (`tools/timeline.py`), the cut, captions in
+  English and Chinese, a 9:16 version -- see [VIDEO.md](VIDEO.md), written for an
+  agent to follow.
+
 What a run leaves in its directory:
 
 | file | from | what it is |
@@ -121,6 +126,7 @@ moves more than 4 deg a step.
 | `ink.py` | step 3: which logged steps are ink, grouped into marks, with a width |
 | `cameras.py` | the two shots, one definition for the renderer and the ink's pixels |
 | `tools/render.py` | step 4: replays the log in plain MuJoCo and renders it |
+| `tools/timeline.py` | a run's moments in seconds of its films, to cut a video at ([VIDEO.md](VIDEO.md)) |
 
 ## Frame
 

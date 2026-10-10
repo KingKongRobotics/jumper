@@ -36,6 +36,7 @@ are only worth anything if that agrees.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import math
 import os
@@ -364,8 +365,10 @@ def _fit_distance(x_extent: float, y_extent: float, shot: cameras.Shot) -> float
     return max(x_extent / (2 * v), y_extent / (2 * h))
 
 
-def film_track(rp: Replay, times: np.ndarray) -> list[cameras.Shot]:
-    """One Shot per time: the character being written, then the reveal."""
+def film_track(rp: Replay, times: np.ndarray, size: tuple[int, int] = (960, 720)
+               ) -> list[cameras.Shot]:
+    """One Shot per time, `size` pixels: the character being written, then the
+    reveal."""
     plan, log = rp.plan, rp.log
     outro = rp.log.phases.index("outro") if "outro" in rp.log.phases else -1
     char_of = np.array([s.char for s in plan.strokes])
@@ -376,7 +379,7 @@ def film_track(rp: Replay, times: np.ndarray) -> list[cameras.Shot]:
     x0, x1, y0, y1 = plan.bounds()
     # The text and the robot beside it (its trunk at y0 - OUTRO_STAND_OFF).
     ry0 = y0 - OUTRO_STAND_OFF - 0.12
-    probe = cameras.Shot("film", (0, 0, 0), 1.0, 0.0, -90.0)
+    probe = cameras.Shot("film", (0, 0, 0), 1.0, 0.0, -90.0, width=size[0], height=size[1])
     # Never nearer than a metre: the robot stands 15 cm off the floor, and nearer
     # than that it fills the frame at the edge.
     reveal_d = max(1.0, 1.3 * _fit_distance(x1 - x0 + 0.08, y1 - ry0 + 0.04, probe))
@@ -409,8 +412,8 @@ def film_track(rp: Replay, times: np.ndarray) -> list[cameras.Shot]:
     for k in range(len(sm) - 2, -1, -1):
         sm[k] = sm[k + 1] + a[k + 1] * (sm[k] - sm[k + 1])
     # The shot can lag the action; never the start and the end, which hold still.
-    return [cameras.Shot("film", tuple(v[:3]), float(v[3]), float(v[5]), float(v[4]))
-            for v in sm]
+    return [cameras.Shot("film", tuple(v[:3]), float(v[3]), float(v[5]), float(v[4]),
+                         width=size[0], height=size[1]) for v in sm]
 
 
 def drying(t: float, end: float) -> float:
@@ -418,7 +421,8 @@ def drying(t: float, end: float) -> float:
     return float(np.clip((t - end - FILM_HOLD) / DRY_S, 0.0, 1.0))
 
 
-def render_film(rp: Replay, marks, out: Path, fps: float, dry: bool = True) -> None:
+def render_film(rp: Replay, marks, out: Path, fps: float, dry: bool = True,
+                size: tuple[int, int] = (960, 720)) -> None:
     """film.mp4: real time, the camera following, then the reveal and a hold, and
     the ink drying off the stone."""
     import imageio.v2 as imageio
@@ -427,7 +431,7 @@ def render_film(rp: Replay, marks, out: Path, fps: float, dry: bool = True) -> N
     after = FILM_HOLD + (DRY_S + DRY_HOLD if dry else 0.0)
     times = np.concatenate([np.arange(0.0, end, 1.0 / fps),
                             end + np.arange(1, int(after * fps) + 1) / fps])
-    shots = film_track(rp, times)
+    shots = film_track(rp, times, size)
     r = rp.renderer(shots[0])
     pts = ink_points(marks)
     writer = imageio.get_writer(out, fps=fps, codec="libx264", quality=8, macro_block_size=8)
@@ -463,6 +467,9 @@ def main() -> int:
     ap.add_argument("--shots", nargs="+", default=["film", "top", "low"],
                     help="film (following, then the reveal), top, low")
     ap.add_argument("--fps", type=float, default=30.0)
+    ap.add_argument("--size", default="960x720", metavar="WxH",
+                    help="the films' frame, pixels: 1920x1080 for a video to post (the "
+                         "README's gif keeps 480x360)")
     ap.add_argument("--no-ink", action="store_true", help="clean plates, no ink drawn")
     ap.add_argument("--gif-speed", type=float, default=6.0)
     ap.add_argument("--no-gif", action="store_true")
@@ -475,7 +482,10 @@ def main() -> int:
     args = ap.parse_args()
 
     rp = Replay(args.run)
-    shots = {s.name: s for s in cameras.shots(*text_frame(rp.plan))}
+    size = tuple(int(v) for v in args.size.lower().split("x"))
+    gif_top, low = cameras.shots(*text_frame(rp.plan))
+    shots = {s.name: dataclasses.replace(s, width=size[0], height=size[1])
+             for s in (gif_top, low)}
     if args.check:
         worst = check(rp, list(shots.values()))
         print(f"worst marker error: {worst:.1f} px")
@@ -491,7 +501,7 @@ def main() -> int:
         for name in args.shots:
             end = float(rp.t[-1])
             ts = [min(t, end + FILM_HOLD + DRY_S + DRY_HOLD) for t in args.still]
-            track = (film_track(rp, np.arange(0.0, max(ts) + 1e-9, 1.0 / args.fps))
+            track = (film_track(rp, np.arange(0.0, max(ts) + 1e-9, 1.0 / args.fps), size)
                      if name == "film" else None)
             for t in ts:
                 shot = track[min(round(t * args.fps), len(track) - 1)] if track \
@@ -516,14 +526,14 @@ def main() -> int:
     for name in args.shots:
         path = args.run / f"{name}{suffix}.mp4"
         if name == "film":
-            render_film(rp, ms if not args.no_ink else [], path, args.fps, args.dry)
+            render_film(rp, ms if not args.no_ink else [], path, args.fps, args.dry, size)
             print(f"[render] wrote {path}")
             continue
         render_shot(rp, shots[name], ms, path, args.fps, 1.0, not args.no_ink)
         print(f"[render] wrote {path}")
     if not args.no_gif and not args.no_ink:
         fps = 15.0
-        frames = render_shot(rp, shots["top"], ms, args.run / "wu.gif", fps, args.gif_speed,
+        frames = render_shot(rp, gif_top, ms, args.run / "wu.gif", fps, args.gif_speed,
                              True, hold=2.5, scale=0.5)
         write_gif(frames, args.run / "wu.gif", fps)
         size = (args.run / "wu.gif").stat().st_size / 1e6
