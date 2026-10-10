@@ -443,3 +443,35 @@ def test_plays_teardown_does_not_depend_on_how_far_startup_got() -> None:
             f"binds -- an exception before that line replaces the real error with "
             f"UnboundLocalError"
         )
+
+
+def test_the_replay_recorder_is_the_only_mp4_writer() -> None:
+    """One recorder: `play.py --video`, through `rl/mjrl/viewer/video.py`.
+
+    There were three. The README clips, the dance export and the replay each
+    drew their own frames, with their own camera, their own idea of which geom
+    groups to hide and their own encoder settings -- and a difference between two
+    pictures of the same policy read as a difference between two policies. Now
+    everything that wants an MP4 runs `play --video`; `tools/readme_media.py`
+    and `tasks/jumper/dance/export_media.py` are drivers of it, and ffmpeg is
+    still allowed to them for what comes *after* the MP4 (a GIF, a soundtrack).
+
+    The control group is the recorder itself, which must contain the call: an
+    empty offender list means nothing if the pattern stopped matching anything.
+    """
+    pattern = re.compile(r"\bwrite_frames\(")
+    recorder = REPO / "rl/mjrl/viewer/video.py"
+    assert pattern.search(recorder.read_text(encoding="utf-8")), (
+        "the recorder no longer calls imageio_ffmpeg.write_frames; "
+        "move this test's pattern with it"
+    )
+    offenders = [
+        str(p.relative_to(REPO))
+        for p in first_party_py()
+        if p != recorder and "tests" not in p.parts
+        and pattern.search(p.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, (
+        "these write MP4 frames themselves instead of running `play.py --video`: "
+        + ", ".join(offenders)
+    )

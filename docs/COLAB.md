@@ -7,10 +7,9 @@ Train on a Colab GPU, inspect progress, replay in MuJoCo, export ONNX and keep a
 portable backup. Your computer only needs a browser.
 
 [Open in Colab](https://colab.research.google.com/github/KingKongRobotics/jumper/blob/main/notebooks/jumper_colab.ipynb),
-save a copy and select a GPU runtime. The main link and defaults use upstream
-`main`. Before merge, use the [PR preview](https://colab.research.google.com/github/tianrking/jumper/blob/codex/colab-training-and-video/notebooks/jumper_colab.ipynb).
-For new training, select `https://github.com/tianrking/jumper.git` and
-`codex/colab-training-and-video` in the advanced source settings.
+save a copy and select a GPU runtime. The link and the notebook's defaults use
+this repository's `main`; the advanced source settings take another repository
+or revision.
 
 ## New training or continue training
 
@@ -46,12 +45,11 @@ Advanced source settings contain `REPOSITORY_URL`, `SOURCE_REVISION`,
 under `/content`, defaulting to `jumper`. Existing checkouts are reused only when
 origin and commit match; switching sources needs a new folder or runtime.
 
-The backup's commit must exist in the selected repository. For the original
-`19e8f4d` backup, open the [notebook from that commit](https://colab.research.google.com/github/tianrking/jumper/blob/19e8f4d54751bccf34c5a336d46b5b8d27afe8f7/notebooks/jumper_colab.ipynb)
-and use `tianrking/jumper`: an upstream squash merge may not retain that commit.
-The current notebook requires the newer workflow interface and refuses the old
-source. For current backups, core versions are read without manual copying.
-Manual overrides accept exact versions of `torch`, `mujoco`, `mujoco-warp`,
+The backup's commit must exist in the selected repository: a backup records the
+repository, commit and core package versions it was made with, and continuation
+checks out that commit before restoring, so a backup made from a fork needs that
+fork in `REPOSITORY_URL`. Core versions are read from the backup without manual
+copying. Manual overrides accept exact versions of `torch`, `mujoco`, `mujoco-warp`,
 `warp-lang`, `numpy` and `tensordict`, not URLs, ranges or pip arguments. The
 supported Torch/torchvision pair is 2.9.1/0.24.1; other pairs need validation.
 
@@ -107,7 +105,9 @@ The shared CLI exposes `--checkpoint-command-ranges`, `--command VX VY YAW`,
 `--evaluation-out JSON` and `--replay-info-out JSON`; ordinary replay is unchanged
 without them.
 
-The notebook displays MP4 inline. `RECORD_JOINTS` also writes `measure.csv` and
+The replay is `scripts/play.py --video`, the repository's one MP4 recorder, so
+what the notebook shows is what `play` shows on a desktop; [Usage](USAGE.md) has
+its camera switches. The notebook displays the MP4 inline. `RECORD_JOINTS` also writes `measure.csv` and
 a PNG: one sample per control step, with time, absolute joint position (rad),
 velocity (rad/s), applied actuator torque (N·m) and available foot force (N).
 These are simulation measurements. Colab does not open a desktop keyboard/gamepad
@@ -139,79 +139,26 @@ Restore does not replace existing runs and rejects unsafe ZIP entries, incomplet
 checkpoints and incompatible settings. Continuation writes a new timestamped run.
 CLI controls and diagnostics are in [Usage](USAGE.md) and [setup](AGENT_SETUP.md).
 
-## Validation boundary
+## What was validated
 
-The core workflow has been exercised in a real Google Colab session on an NVIDIA
-Tesla T4, with Python 3.13, PyTorch 2.9.1+cu126, MuJoCo 3.11 and Warp 1.18.
-These results cover the tested branch's core code, rather than guaranteeing every
-future Colab image or GPU allocation:
+The workflow was exercised in real Google Colab sessions on an NVIDIA Tesla T4
+with Python 3.13, PyTorch 2.9.1+cu126, MuJoCo 3.11 and Warp 1.18, on the code
+this notebook was merged from. That establishes that the paths work, not that
+every future Colab image or GPU allocation behaves the same, and not that a
+policy trained this way is any good: the 500-iteration `jumper.tripod` run whose
+video the [quick start](../notebooks/README.md) shows stayed at curriculum level
+0, with a linear tracking error of 0.195 against a promotion threshold of 0.105.
 
-The tested source (`19e8f4d`) completed the default 500-iteration T4 run, including
-joint telemetry, scalar exports and per-run artifact packaging. The confirmed
-workflow and regression results are recorded below.
+What ran, end to end: a smoke run and a 500-iteration run on 256 environments;
+ZIP backup, restore and five further iterations with the same source and core
+versions; a 64-environment run continued from an uploaded ZIP; a real `SIGINT`
+partway through a run, backed up, restored and trained further; ONNX export with
+a maximum absolute error below `1e-6` against the torch actor; MP4 replays through
+NVIDIA EGL, with joint telemetry; the four fixed-command evaluations; training
+curves with every scalar tag exported. The repository's test suite was run in the
+same environment in batches of files; two failures reproduced on the baseline
+without this work (a posture mirror geometry check, and TensorBoard's port
+selection against a lingering `TIME_WAIT` socket).
 
-| Check | Observed result |
-|---|---|
-| GPU training smoke | Five PPO iterations with 256 `jumper.tripod` environments completed. |
-| Main training | 500 iterations with 256 `jumper.tripod` environments completed and produced `model_499.pt`. |
-| Restore | The ZIP was restored and training continued for five iterations from `model_499.pt`, saving `model_503.pt` with the same source and core package versions. |
-| ONNX export comparison | The 411-input, 20-output actor passed comparison with a maximum absolute error of `7.15e-7`. |
-| Supplied dance recording | A 500-step MP4 was generated with NVIDIA EGL on the actual T4 GPU and verified by local decoding and cloud `ffprobe`. |
-| Trained-policy recording | A 500-step MP4 of the newly trained policy was generated with NVIDIA EGL on the actual T4 GPU and passed the same video checks. |
-| Joint telemetry | 500 CSV rows include position, velocity, applied actuator torque and foot force; the corresponding PNG was generated. |
-| Training curves | 51 scalar tags and 25,500 samples were exported, with a six-panel curve PNG. |
-| Portable backup | A 121,887,490-byte ZIP passed CRC checks and contains the run's checkpoints and generated artifacts. |
-| Replay parameter variations | A two-second, 320 x 240, 20 fps studio replay at 1.5 m camera distance succeeded with joint recording off, producing 41 H.264 frames. Restoring the default ten-second settings succeeded and produced a fresh 500-row joint recording. |
-| Focused checks | All 104 passed in 6.89 seconds. |
-| All test files | All 62 `test_*.py` files ran in 16 sequential batches, at most four files per pytest process. JUnit totals: 1123 tests, 1096 passed, 25 skipped, 2 failed, 0 errors; summed run time 354.651 seconds. |
-| Google Drive mounting | Disabled in this session and not tested. |
-
-The graphics check used NVIDIA EGL rather than Mesa software rendering. The setup
-selected the existing NVIDIA graphics libraries through task-local vendor JSON;
-it did not change the system driver. The backup/restore result verifies the local
-snapshot mechanism, not Google Drive authorization or remote persistence.
-Both recordings contain 301 H.264 frames at 640 x 480 and 30 fps, with a duration
-of 10.033333 seconds. This includes the initial frame as well as frames sampled
-during the ten-second simulation. With joint recording disabled, the preceding
-measurement files were preserved under `replay-history` and excluded from that
-replay's attachments, rather than being presented as new measurements.
-
-The single-process full pytest run was terminated by the system with `SIGKILL`
-(`-9`) at about 57% completion. The completed coverage therefore comes from the
-16 bounded batches above, not a completed single-process suite. The batch totals
-include two failures: posture mirror geometry and TensorBoard port selection with
-a lingering `TIME_WAIT` socket. Both were reproduced on the upstream baseline in
-the same Colab environment. Skipped tests are not passes.
-
-A separate baseline sequence, running the claw operator test before the resolver
-default-thread test, also reproduced the native thread-count discrepancy of two
-versus eight. The resolver passed in the bounded branch run, so that baseline
-sequence result is not counted as a third failure in the 1123-test batch total.
-Separate processes do not establish that all tests coexist in one shared process.
-
-These runs establish that the tested training, checkpoint, restore and
-export paths work. They do not establish policy convergence, a robust gait or
-real-robot behavior. The two batch failures, the single-process interruption and
-the baseline sequence dependence limit the regression evidence. Google Drive
-mounting was not tested.
-
-## Updated workflow acceptance
-
-The reorganized workflow was tested separately on a real Tesla T4. Runtime source
-was `9865160`; the continuation notebook was `243a33e`. The original 500-iteration
-video above remains the `19e8f4d` result, not a video of this later short run.
-
-| Check | Observed result |
-|---|---|
-| New training | Five smoke iterations and 25 main iterations with 64 `jumper.tripod` environments completed, producing `model_24.pt`. |
-| ZIP continuation | Real backup bytes supplied at the `files.upload` boundary populated the task, environment count, source and six core versions. Rerunning basic and advanced forms retained the selected checkpoint. Five further updates produced `model_28.pt`. |
-| Replay and evaluation | Fresh and continued checkpoints each produced a two-second replay and forward, sideways, turn and stand JSON reports. All cases matched checkpoint curriculum level 0. Each replay had 100 control steps and 61 H.264 frames at 640 x 480, 30 fps, including the initial frame. |
-| ONNX | Fresh and continued actors passed comparison, with maximum absolute errors of `4.77e-7` and `3.58e-7`. |
-| Continued backup | The 23,247,110-byte ZIP passed local CRC and SHA-256 checks and contains `model_28.pt`, curves, replay, evaluation reports and export. |
-| Real interruption | A 2000-iteration-budget run received SIGINT after `model_0.pt` was completely saved. Its manifest recorded `interrupted`; backup/restore followed by two additional updates finished and saved `model_1.pt`. |
-| Focused regression | 253 checks passed with 54 warnings in 74.77 seconds at test source `d5bc9e9`, including all 43 replay tests, 18 native parity tests and a real Torch fixed-command sampler/reset check. |
-
-The ZIP upload test exercised real bytes through the notebook's upload boundary;
-it did not exercise the browser file picker. Drive mounting remains untested.
-The fixed-command reports verify execution and expose tracking error; neither a
-short run nor the curriculum level establishes policy convergence or robot safety.
+Google Drive mounting has not been tested. The ZIP upload was exercised with real
+bytes at the notebook's upload boundary, not through the browser's file picker.
