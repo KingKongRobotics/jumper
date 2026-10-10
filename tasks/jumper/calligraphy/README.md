@@ -30,9 +30,10 @@ python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3/<ru
   跳跳 takes about 25 minutes on a 4-core CPU, 无 alone about 5. The first run also
   works out where the arm can reach, 4-6 minutes, and keeps it in
   `logs/calligraphy/cache/`.
-- `render.py` replays the run into films and pictures. On Linux it needs
-  `MUJOCO_GL=egl` with an NVIDIA GPU, or `MUJOCO_GL=osmesa` without one (slow: render
-  only the main shot with `--shots film`); on macOS and Windows leave it unset.
+- `render.py` replays the run into films and pictures, with nothing to set up. On
+  Linux it renders on the CPU (OSMesa), about 20x slower than real time -- 37
+  minutes for 无's film on a 4-core container -- so `--shots film` renders only the
+  main shot; with an NVIDIA GPU, `MUJOCO_GL=egl` is much faster.
 - `--text` takes any characters with stroke data in `data/`: 无 and 跳 are there.
   Any other, from Make Me a Hanzi:
 
@@ -42,15 +43,19 @@ python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3/<ru
   python tasks/jumper/calligraphy/tools/write.py --text 永
   ```
 
-- `--layout horizontal` writes left to right instead of top to bottom; `--scene
-  beach`, `studio` or `none` changes the sky; `--no-outro` stops at the last stroke.
+- A space separates words and leaves half a character between them:
+  `--text "跳跳 你好" --layout horizontal` writes the name and then a greeting, left
+  to right. Horizontal suits more than one word: the arm that holds the brush is
+  the left one, so the robot stands to the right of what it writes, and in a line
+  written left to right that floor is still dry. `--scene beach`, `studio` or
+  `none` changes the sky; `--no-outro` stops at the last stroke.
   A run with more than one or two seams (`grep SEAM`) is worth running again.
 
 What a run leaves in its directory:
 
 | file | from | what it is |
 |---|---|---|
-| `film.mp4` | render | the shot for a video: real time, following the character being written, then pulling back to the whole text and five seconds on it |
+| `film.mp4` | render | the shot for a video: real time, following the character being written, then pulling back to the whole text, five seconds on it, and the water drying off the stone as 地书 does (`--no-dry` ends on the ink) |
 | `result.png` | render | the finished text from above, 1920 x 1080: a thumbnail |
 | `top.mp4`, `low.mp4` | render | overhead and low shots, fixed, real time, ink drawn as it is laid (`--no-ink`: clean plates) |
 | `wu.gif` | render | the overhead shot at 6x, 480 x 360, for a README |

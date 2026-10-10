@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:7744041dc90b64f8 -->
+<!-- tracks: README.md @ sha256:09e33d5de2039bea -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -41,8 +41,8 @@ python tasks/jumper/calligraphy/tools/write.py --text 跳跳          # 4 核 CP
 python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3/<run>
 ```
 
-`render.py` 会在该次运行的目录里生成 `film.mp4` 和 `result.png`；在 Linux 上需要
-`MUJOCO_GL=egl`（没有 GPU 时用 `osmesa`）。其他汉字、各项选项，以及规划器、控制器、
+`render.py` 会在该次运行的目录里生成 `film.mp4` 和 `result.png`（Linux 上有 NVIDIA GPU 时，
+设 `MUJOCO_GL=egl` 会快得多）。其他汉字、各项选项，以及规划器、控制器、
 渲染和供后期描墨的笔画数据，都在
 [`tasks/jumper/calligraphy/`](tasks/jumper/calligraphy/README.md)。
 

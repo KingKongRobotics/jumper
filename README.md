@@ -48,8 +48,8 @@ python tasks/jumper/calligraphy/tools/write.py --text 跳跳          # ~25 min 
 python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3/<run>
 ```
 
-`render.py` leaves `film.mp4` and `result.png` in the run's directory; on Linux it
-needs `MUJOCO_GL=egl` (or `osmesa` without a GPU). Other characters, the options and
+`render.py` leaves `film.mp4` and `result.png` in the run's directory (on Linux with
+an NVIDIA GPU, `MUJOCO_GL=egl` makes it much faster). Other characters, the options and
 everything else — the planner, the controller, the renders and the stroke data for
 painting the ink in post-production — are in
 [`tasks/jumper/calligraphy/`](tasks/jumper/calligraphy/README.md).

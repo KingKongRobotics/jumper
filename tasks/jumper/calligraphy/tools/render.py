@@ -9,7 +9,9 @@ Writes into the run's directory:
 
     film.mp4            real time, the camera following the character being written,
                         then pulling back to the whole text and the robot beside it
-                        (its outro), and holding on it -- the shot for a video
+                        (its outro), holding on it, and the water drying off the
+                        stone as 地书 does (--no-dry ends on the ink) -- the shot
+                        for a video
     top.mp4, low.mp4    the overhead and the low shot, fixed, real time, ink drawn as it
                         is laid (--no-ink for clean plates to composite onto)
     result.png          the finished text from above, 1920 x 1080: a thumbnail
@@ -37,21 +39,34 @@ import argparse
 import json
 import math
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
 
-os.environ.setdefault("MUJOCO_GL", "osmesa")
+# OSMesa by default on Linux, so a machine without a GPU renders; macOS and Windows
+# have their own GL and no OSMesa.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("MUJOCO_GL", "osmesa")
 
 import mujoco
 
 from tasks.jumper.calligraphy import cameras, hanzi, ink
 
-#: 地书 is water on stone: the ink is the stone darkened, not black.
-INK_RGBA = (0.22, 0.21, 0.21, 1.0)
 #: The paving: light stone slabs with darker joints.
 STONE = np.array([0.60, 0.58, 0.55])
 JOINT = np.array([0.42, 0.40, 0.38])
+#: 地书 is water on stone: the ink is the stone darkened, not black -- deepest where
+#: the water stands, paler at the rim where it thins out, with a wet sheen.
+WET = (*(STONE * 0.42), 1.0)
+WET_RIM = (*(STONE * 0.70), 1.0)
+RIM = 0.0008                      # m, how far the paler rim reaches past the wet patch
+WET_SPECULAR = 0.35
+#: The film ends with the water drying off the stone, as 地书 does: every patch
+#: shrinks from its edge at about the same pace, so the thin strokes go first and
+#: the heads last, a little unevenly over the floor (`--no-dry` keeps the ink).
+DRY_S = 6.0                       # s, after FILM_HOLD
+DRY_HOLD = 1.5                    # s on the dry floor
 HAZE = (0.86, 0.87, 0.88, 1.0)
 
 
@@ -119,17 +134,50 @@ def dress(m: mujoco.MjModel) -> None:
         m.vis.headlight.diffuse = (0.30, 0.30, 0.30)
 
 
-def _add_disc(scene, x: float, y: float, r: float, rgba=INK_RGBA) -> bool:
-    """A flat wet patch: an ellipsoid r x r x 0.3 mm, so it has no rim."""
+def _add_disc(scene, x: float, y: float, r: float, rgba, z: float = ink.LIFT,
+              specular: float = 0.0) -> bool:
+    """A flat patch: an ellipsoid r x r x 0.3 mm, so it has no hard edge."""
     if scene.ngeom >= scene.maxgeom:
         return False
     g = scene.geoms[scene.ngeom]
     mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_ELLIPSOID, np.array([r, r, 0.0003]),
-                        np.array([x, y, ink.LIFT]), np.eye(3).ravel(),
+                        np.array([x, y, z]), np.eye(3).ravel(),
                         np.asarray(rgba, dtype=np.float32))
-    g.specular = 0.0
+    g.specular = specular
+    g.shininess = 0.6
     scene.ngeom += 1
     return True
+
+
+def _add_ink(scene, pts: np.ndarray, dry: float = 0.0) -> None:
+    """The ink laid so far, rows of t, x, y, radius: a pale rim under each wet
+    patch, the patch 0.1 mm above it. `dry`, 0 to 1, is how far the water has
+    dried off: each patch shrinks from its edge and pales, by about the same amount
+    everywhere, so at 1 nothing is left."""
+    if not len(pts) or dry >= 1.0:
+        return
+    x, y, r = pts[:, 1], pts[:, 2], pts[:, 3]
+    core = np.asarray(WET)
+    if dry > 0.0:
+        # Patches 2-3 cm across that dry up to a quarter faster or slower.
+        patchy = (0.6 * np.sin(x / 0.004 + 1.3) * np.sin(y / 0.005 + 0.7)
+                  + 0.4 * np.sin((x + y) / 0.0027))
+        # Paling first, shrinking later: at the pace of `dry` itself the strokes were
+        # gone a third of the way in, and at its square halfway; at its cube the
+        # bodies of 跳跳's strokes last to ~3/4 and the heads to ~9/10. Paced by the
+        # 95th percentile of the radius, not the widest point, which set it alone.
+        size = np.percentile(r, 95) + RIM
+        r = r - dry ** 3 * size / 0.75 * (1.0 + 0.25 * patchy)
+        core = core + (np.asarray(WET_RIM) - core) * dry
+    rim = r + RIM * (1.0 - dry)
+    keep = rim > 0.0
+    for xi, yi, ri in zip(x[keep], y[keep], rim[keep]):
+        if not _add_disc(scene, xi, yi, ri, WET_RIM):
+            return
+    keep = r > 0.0
+    for xi, yi, ri in zip(x[keep], y[keep], r[keep]):
+        if not _add_disc(scene, xi, yi, ri, core, ink.LIFT + 0.0001, WET_SPECULAR):
+            return
 
 
 def _backdrop(scene, shot: cameras.Shot) -> None:
@@ -198,8 +246,10 @@ def ink_points(marks) -> np.ndarray:
     return pts[np.argsort(pts[:, 0])]
 
 
-def frame(rp: Replay, r: mujoco.Renderer, shot: cameras.Shot, cam, pts, t: float) -> np.ndarray:
-    """One picture of the run at time t; the ink laid by then, unless `pts` is None."""
+def frame(rp: Replay, r: mujoco.Renderer, shot: cameras.Shot, cam, pts, t: float,
+          dry: float = 0.0) -> np.ndarray:
+    """One picture of the run at time t; the ink laid by then, unless `pts` is None,
+    dried off by `dry` (0 to 1)."""
     rp.at(t)
     r.update_scene(rp.d, camera=cam)
     r.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = True
@@ -207,10 +257,7 @@ def frame(rp: Replay, r: mujoco.Renderer, shot: cameras.Shot, cam, pts, t: float
     if shot.elevation > -60 and not rp.sky:
         _backdrop(r.scene, shot)
     if pts is not None:
-        n = np.searchsorted(pts[:, 0], t, side="right")
-        for x, y, rad in pts[:n, 1:]:
-            if not _add_disc(r.scene, x, y, rad):
-                break
+        _add_ink(r.scene, pts[:np.searchsorted(pts[:, 0], t, side="right")], dry)
     return r.render()
 
 
@@ -366,19 +413,27 @@ def film_track(rp: Replay, times: np.ndarray) -> list[cameras.Shot]:
             for v in sm]
 
 
-def render_film(rp: Replay, marks, out: Path, fps: float) -> None:
-    """film.mp4: real time, the camera following, then the reveal and a hold."""
+def drying(t: float, end: float) -> float:
+    """How far the ink has dried at film time `t`: 0 until FILM_HOLD after the end."""
+    return float(np.clip((t - end - FILM_HOLD) / DRY_S, 0.0, 1.0))
+
+
+def render_film(rp: Replay, marks, out: Path, fps: float, dry: bool = True) -> None:
+    """film.mp4: real time, the camera following, then the reveal and a hold, and
+    the ink drying off the stone."""
     import imageio.v2 as imageio
 
     end = rp.t[-1]
+    after = FILM_HOLD + (DRY_S + DRY_HOLD if dry else 0.0)
     times = np.concatenate([np.arange(0.0, end, 1.0 / fps),
-                            end + np.arange(1, int(FILM_HOLD * fps) + 1) / fps])
+                            end + np.arange(1, int(after * fps) + 1) / fps])
     shots = film_track(rp, times)
     r = rp.renderer(shots[0])
     pts = ink_points(marks)
     writer = imageio.get_writer(out, fps=fps, codec="libx264", quality=8, macro_block_size=8)
     for k, (t, shot) in enumerate(zip(times, shots)):
-        writer.append_data(frame(rp, r, shot, shot.mjv_camera(), pts, min(t, end)))
+        writer.append_data(frame(rp, r, shot, shot.mjv_camera(), pts, min(t, end),
+                                 drying(t, end) if dry else 0.0))
         if k % 200 == 0:
             print(f"  film: frame {k}/{len(times)}", flush=True)
     writer.close()
@@ -411,6 +466,8 @@ def main() -> int:
     ap.add_argument("--no-ink", action="store_true", help="clean plates, no ink drawn")
     ap.add_argument("--gif-speed", type=float, default=6.0)
     ap.add_argument("--no-gif", action="store_true")
+    ap.add_argument("--no-dry", dest="dry", action="store_false",
+                    help="end the film on the ink, without it drying off the stone")
     ap.add_argument("--still", type=float, nargs="+", metavar="T",
                     help="write <shot>_<T>.png at these times (s) and stop")
     ap.add_argument("--check", action="store_true",
@@ -432,7 +489,8 @@ def main() -> int:
 
         pts = None if args.no_ink else ink_points(ms)
         for name in args.shots:
-            ts = [min(t, float(rp.t[-1]) + FILM_HOLD) for t in args.still]
+            end = float(rp.t[-1])
+            ts = [min(t, end + FILM_HOLD + DRY_S + DRY_HOLD) for t in args.still]
             track = (film_track(rp, np.arange(0.0, max(ts) + 1e-9, 1.0 / args.fps))
                      if name == "film" else None)
             for t in ts:
@@ -440,7 +498,8 @@ def main() -> int:
                     else shots[name]
                 r = rp.renderer(shot)
                 path = args.run / f"{name}_{t:05.1f}.png"
-                img = frame(rp, r, shot, shot.mjv_camera(), pts, min(t, float(rp.t[-1])))
+                img = frame(rp, r, shot, shot.mjv_camera(), pts, min(t, end),
+                            drying(t, end) if name == "film" and args.dry else 0.0)
                 Image.fromarray(img).save(path)
                 r.close()
                 print(f"[render] wrote {path}")
@@ -457,7 +516,7 @@ def main() -> int:
     for name in args.shots:
         path = args.run / f"{name}{suffix}.mp4"
         if name == "film":
-            render_film(rp, ms if not args.no_ink else [], path, args.fps)
+            render_film(rp, ms if not args.no_ink else [], path, args.fps, args.dry)
             print(f"[render] wrote {path}")
             continue
         render_shot(rp, shots[name], ms, path, args.fps, 1.0, not args.no_ink)
