@@ -38,7 +38,7 @@ MARKER = re.compile(
 #: Directories a translation may live in. Not the whole tree: `.claude/skills/`
 #: is instructions an agent reads, and its `description:` decides whether the
 #: skill triggers at all, so those stay in one language.
-ROOTS = ("", "docs", "deploy")
+ROOTS = ("", "docs", "deploy", "notebooks")
 
 
 def digest_of(path: Path) -> str:
