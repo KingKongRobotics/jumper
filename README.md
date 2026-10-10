@@ -12,13 +12,14 @@ This repo is Jumper’s AI toolkit for appearance, motion, and scene creation. O
 
 ## This fork: Jumper writes calligraphy · 地书
 
-![Jumper writing its name, 跳跳, on the floor with a brush, seen from above](docs/media/calligraphy-wu.gif)
+![Jumper writing its name, 跳跳, and 你好, "hello", on the floor with a brush, seen from above](docs/media/calligraphy-wu.gif)
 
 In Chinese parks people write characters on the paving stones with a long brush
 dipped in water — 地书, "ground calligraphy" — and the characters dry and vanish.
 This fork teaches Jumper to do the same, in simulation: it holds a brush in its
-claw and writes its own name, **跳跳** (*tiàotiào*), stroke by stroke and in stroke
-order, top to bottom — then steps aside, turns to the text, dances and bows.
+claw and writes its own name, **跳跳** (*tiàotiào*), and then **你好** (*nǐ hǎo*,
+"hello"), stroke by stroke and in stroke order — then steps aside, turns to the
+text, dances and bows, and the water dries off the stone.
 
 - **The strokes** come from [Make Me a Hanzi](https://github.com/skishore/makemeahanzi):
   each stroke's median line, smoothed and scaled onto the floor, with a press
@@ -32,20 +33,22 @@ order, top to bottom — then steps aside, turns to the text, dances and bows.
 - **The legs stand like a statue while the arm writes.** Jumper's five-legged gait
   (`jumper.five_foot`) walks; once it stops, its last command to the legs is held
   until the arm has folded again, so the feet do not shuffle as the arm swings out.
-- **Measured:** 跳跳 at 12.0 cm a character, 26 strokes in 214 s; the ink is
-  0.9 mm from the stroke (median, p95 2.6 mm), a quarter of the hair's length goes
-  into the stone (median; half at most), the body moves 0.2 mm while a stroke is
-  written, the feet at most 4.3 mm while the arm unfolds, and the arm and the
-  brush never pass through the body. One stroke of the 26 is written in two
-  pieces. 无 alone: 12.0 cm, every stroke whole, p95 2.1 mm.
+- **Measured** on the film's run: 跳跳 你好 at 12.0 cm a character, 39 strokes;
+  the ink is 0.9 mm from the stroke (median, p95 2.5 mm) and two strokes are
+  written in two pieces; the claw stays 5 mm off the floor. In a run of the same
+  build: a quarter of the hair's length goes into the stone (median; half at
+  most), the body moves 0.2 mm while a stroke is written, and no foot comes
+  within 6 cm of the ink — the robot stands to the right of what it writes and
+  the line goes left to right. Once, finishing a stroke near the body, the claw
+  brushes the front of the trunk for half a second.
 
 Try it — nothing to train, no GPU needed to write:
 
 ```bash
 git clone -b calligraphy https://github.com/AgusBM/jumper && cd jumper
 python -m venv .venv && source .venv/bin/activate && pip install -e .
-python tasks/jumper/calligraphy/tools/write.py --text 跳跳          # ~25 min on a 4-core CPU
-python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3/<run>
+python tasks/jumper/calligraphy/tools/write.py --text "跳跳 你好" --layout horizontal   # ~40 min, 4-core CPU
+python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3_u4f60-u597d/<run>
 ```
 
 `render.py` leaves `film.mp4` and `result.png` in the run's directory (on Linux with
