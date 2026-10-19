@@ -1,6 +1,6 @@
 # jumper
 
-A robot controller and the policies it runs, exported from kk-rl-mjlab -- one
+A robot controller and the policies it runs, exported from KingKongRobotics/jumper -- one
 bundle for every host: the robot's board, a browser, and `play`.
 
 ```
@@ -31,6 +31,10 @@ dance_maze.json                   dance_maze's contract: observation layout, joi
 models/dance_maze.onnx            dance_maze's policy, onnx
 models/dance_maze.rknn            dance_maze's policy, rknn
 maze.motion.trajectory.json       the recording dance_maze is driven by
+dash.json                         dash's contract: observation layout, joint order, gains
+models/dash.onnx                  dash's policy, onnx
+models/dash.rknn                  dash's policy, rknn
+dash_flat.trajectory.json         the recording dash is driven by
 gesture_bow.json                  gesture_bow's contract: observation layout, joint order, gains
 models/gesture_bow.onnx           gesture_bow's policy, onnx
 models/gesture_bow.rknn           gesture_bow's policy, rknn
@@ -43,10 +47,30 @@ gesture_paw.json                  gesture_paw's contract: observation layout, jo
 models/gesture_paw.onnx           gesture_paw's policy, onnx
 models/gesture_paw.rknn           gesture_paw's policy, rknn
 paw.motion.trajectory.json        the recording gesture_paw is driven by
+gesture_pump.json                 gesture_pump's contract: observation layout, joint order, gains
+models/gesture_pump.onnx          gesture_pump's policy, onnx
+models/gesture_pump.rknn          gesture_pump's policy, rknn
+pump.motion.trajectory.json       the recording gesture_pump is driven by
 gesture_salute.json               gesture_salute's contract: observation layout, joint order, gains
 models/gesture_salute.onnx        gesture_salute's policy, onnx
 models/gesture_salute.rknn        gesture_salute's policy, rknn
 salute.motion.trajectory.json     the recording gesture_salute is driven by
+gesture_sleep.json                gesture_sleep's contract: observation layout, joint order, gains
+models/gesture_sleep.onnx         gesture_sleep's policy, onnx
+models/gesture_sleep.rknn         gesture_sleep's policy, rknn
+sleep.motion.trajectory.json      the recording gesture_sleep is driven by
+gesture_threat.json               gesture_threat's contract: observation layout, joint order, gains
+models/gesture_threat.onnx        gesture_threat's policy, onnx
+models/gesture_threat.rknn        gesture_threat's policy, rknn
+threat.motion.trajectory.json     the recording gesture_threat is driven by
+gesture_wave.json                 gesture_wave's contract: observation layout, joint order, gains
+models/gesture_wave.onnx          gesture_wave's policy, onnx
+models/gesture_wave.rknn          gesture_wave's policy, rknn
+wave.motion.trajectory.json       the recording gesture_wave is driven by
+gesture_zoidberg.json             gesture_zoidberg's contract: observation layout, joint order, gains
+models/gesture_zoidberg.onnx      gesture_zoidberg's policy, onnx
+models/gesture_zoidberg.rknn      gesture_zoidberg's policy, rknn
+zoidberg.motion.trajectory.json   the recording gesture_zoidberg is driven by
 jump.json                         jump's contract: observation layout, joint order, gains
 models/jump.onnx                  jump's policy, onnx
 models/jump.rknn                  jump's policy, rknn
@@ -54,6 +78,9 @@ high_jump_flat.trajectory.json    the recording jump is driven by
 locomotion.json                   locomotion's contract: observation layout, joint order, gains
 models/locomotion.onnx            locomotion's policy, onnx
 models/locomotion.rknn            locomotion's policy, rknn
+sprint.json                       sprint's contract: observation layout, joint order, gains
+models/sprint.onnx                sprint's policy, onnx
+models/sprint.rknn                sprint's policy, rknn
 reference.json                    recorded frames, so you can measure that you agree
 manual.en.json                    every key and button this bundle reads, and what each does
 bundle.json                       every file, its size and its SHA-256, and which host takes what
@@ -62,7 +89,7 @@ bundle.json                       every file, its size and its SHA-256, and whic
 `manual.en.json` is written by the build from the controller's own account of
 its pad and its keys, so it describes exactly the bindings here. A translation travels
 beside it as `manual.<language>.json` -- `manual.zh.json` in Chinese -- listed
-in `bundle.json`'s `manuals`. `deploy/app.schema` in kk-rl-mjlab describes every
+in `bundle.json`'s `manuals`. `deploy/app.schema` in KingKongRobotics/jumper describes every
 file a bundle may hold and the format of each, and every build is checked
 against it.
 
@@ -99,7 +126,7 @@ Everything else comes from the contracts here, and `--dry-run` prints what it
 will use -- the DDS domains, the QoS file, each mode's controls as its contract
 gives them -- and every note and stub.
 
-With `play`, from kk-rl-mjlab -- every mode, on this bundle's own keys and a
+With `play`, from KingKongRobotics/jumper -- every mode, on this bundle's own keys and a
 gamepad, the controller's own joint targets driving the simulated servos:
 
 ```bash
@@ -116,7 +143,7 @@ The rest of this file is for a browser.
 
 **The controller here is the one the robot runs.** Not the same logic
 reimplemented from the same contract -- the same compiled object, built from
-`deploy/fsm` at commit `ce71f79b191766f0208dca34516564a37816c729`. That is the point of shipping it: three
+`deploy/fsm` at commit `372819e1fe1a7c2d77e78b16f7e4968d239542d9`. That is the point of shipping it: three
 implementations of one observation agreed by people reading each other's code,
 and a sign corrected in one left the other two wrong with every other number
 still correct.
@@ -424,4 +451,4 @@ loader error nobody can read.
 
 ---
 
-Built by `scripts/deploy.py` from kk-rl-mjlab `ce71f79b191766f0208dca34516564a37816c729`.
+Built by `scripts/deploy.py` from KingKongRobotics/jumper `372819e1fe1a7c2d77e78b16f7e4968d239542d9`.

@@ -423,6 +423,7 @@ impl Controller {
         // is worse than one not decoded at all.
         self.pending = None;
 
+        let before = self.fsm.current().name.clone();
         let mode_name = {
             let cfg = self.fsm.config();
             let warm_target = self.warm_target();
@@ -439,6 +440,22 @@ impl Controller {
             self.fsm.update(&inputs, now).name.clone()
         };
         let state = self.fsm.current().clone();
+
+        // A recorded motion the cascade left before it played out -- the tilt
+        // fallback, stale feedback -- is over all the same. It is reported
+        // completed so the host releases its latch; otherwise the latch outlives
+        // the fall, and `button:<motion>` re-enters the motion the moment the
+        // robot is level again, from the start. Measured in the crab battle
+        // (2026-10-15, `tools/battle`, seed 3): a dash that flipped the crab at
+        // 11.7 s stayed latched through `safe`, and when the next round stood
+        // the crab on its mark at 24.4 s it dashed into the middle of the arena
+        // before anybody pressed anything -- which on the robot is a fall, a
+        // person standing it back up, and the move it fell on playing again.
+        // A gait left the same way says nothing: its latch is the operator's
+        // (`carry` on a held LB), and a mode is not a move.
+        if before != mode_name && self.modes.get(&before).is_some_and(|m| m.contract.reference.is_some()) {
+            self.completed = Some(before);
+        }
 
         if state.warm_start && input.state_fresh {
             let target = self.warm_target().unwrap_or(&self.default_wire).to_vec();
@@ -1660,6 +1677,99 @@ mod tests {
             }
             assert_eq!(g.take_completed(), None, "tick {tick}: a gait does not end");
         }
+    }
+
+    /// `EXAMPLE` with the jump answerable to the tilt check, as the shipped
+    /// jumper bundle's every motion is ("No state sets `skip_tilt_check`").
+    fn with_jump_under_the_tilt_check() -> Controller {
+        let text = EXAMPLE.replace("skip_tilt_check = true\n", "");
+        assert_ne!(text, EXAMPLE, "the exemption was not where this expected it");
+        let mut contracts = HashMap::new();
+        for name in ["locomotion", "carry"] {
+            contracts.insert(name.to_string(), contract([0.1, 0.1], 200.0, 0.0));
+        }
+        contracts.insert("jump".to_string(), jump_contract(None));
+        Controller::new(FsmConfig::parse(&text).unwrap(), setup(), contracts, 0).unwrap()
+    }
+
+    /// Drive `c` for `ticks` at 1 kHz with `latched` pressed: level until the
+    /// mode `cut` has inferred for 50 ms, then tipped past the tilt limit for
+    /// half a second, then level again. Returns every mode that inferred
+    /// after the robot was back on its feet, and what `take_completed` said.
+    /// With `honour`, a completion releases the latch of that name, which is
+    /// what every host does; without it the latch stays, which is the control.
+    fn cut_short_by_a_tilt(
+        c: &mut Controller,
+        cut: &str,
+        latched: &mut std::collections::BTreeSet<String>,
+        honour: bool,
+    ) -> (std::collections::BTreeSet<String>, Vec<String>) {
+        let (home, cmd) = ([0.1f32, 0.1], Command::default());
+        let level = at(home);
+        let mut tipped = at(home);
+        tipped.imu.quat = [0.707, 0.707, 0.0, 0.0]; // a quarter turn about x: past 0.8 rad either way round
+        let (mut running_since, mut tipped_at) = (None, None);
+        let (mut after, mut completed) = (std::collections::BTreeSet::new(), vec![]);
+        for tick in 0..12_000u64 {
+            let fallen = matches!(tipped_at, Some(t) if tick >= t && tick < t + 500);
+            let mut i = input(if fallen { &tipped } else { &level }, &cmd);
+            i.buttons = latched;
+            let step = c.tick(&i, tick * 1_000).unwrap();
+            if let Some(done) = c.take_completed() {
+                completed.push(done.clone());
+                if honour {
+                    latched.remove(&done);
+                }
+            }
+            if let Step::Infer { mode } = step {
+                c.resume(&[0.0, 0.0]).unwrap();
+                if mode == cut && running_since.is_none() {
+                    running_since = Some(tick);
+                }
+                if matches!(tipped_at, Some(t) if tick >= t + 500) {
+                    after.insert(mode);
+                }
+            }
+            if tipped_at.is_none() && matches!(running_since, Some(t) if tick >= t + 50) {
+                tipped_at = Some(tick);
+            }
+        }
+        assert!(running_since.is_some(), "{cut} never ran; warm start or ramp did not clear");
+        assert!(tipped_at.is_some());
+        (after, completed)
+    }
+
+    #[test]
+    fn a_motion_the_tilt_fallback_cuts_short_is_over_and_a_gait_is_not() {
+        // The failure this pins: a latched jump interrupted by a fall stayed
+        // latched through `safe`, and the cascade re-entered the jump the
+        // moment the robot was level -- from the start, with nobody pressing
+        // anything. The completion the host releases latches on was only
+        // reported when a recording played out, and a fall cut it short.
+        let mut c = with_jump_under_the_tilt_check();
+        let mut latched: std::collections::BTreeSet<String> = ["jump".to_string()].into();
+        let (after, completed) = cut_short_by_a_tilt(&mut c, "jump", &mut latched, true);
+        assert_eq!(completed, ["jump"], "the cut-short jump was not reported over, exactly once");
+        assert!(latched.is_empty(), "the host released it on that report");
+        assert!(after.contains("locomotion"), "the robot never got back on its feet: {after:?}");
+        assert!(!after.contains("jump"), "the jump played again after the fall: {after:?}");
+
+        // Control one: the same fall with the report ignored -- the latch kept
+        // -- and the cascade does re-enter the jump, so the assertion above is
+        // about the release and not about a loop that cannot reach the mode.
+        let mut c = with_jump_under_the_tilt_check();
+        let mut kept: std::collections::BTreeSet<String> = ["jump".to_string()].into();
+        let (after, _) = cut_short_by_a_tilt(&mut c, "jump", &mut kept, false);
+        assert!(after.contains("jump"), "with the latch kept the jump should have played again: {after:?}");
+
+        // Control two: a gait cut short the same way reports nothing. Its latch
+        // is the operator's -- `carry` is LB held -- and releasing it here would
+        // be the controller letting go of a dead-man switch on its own.
+        let mut c = with_jump_under_the_tilt_check();
+        let mut carry: std::collections::BTreeSet<String> = ["carry".to_string()].into();
+        let (after, completed) = cut_short_by_a_tilt(&mut c, "carry", &mut carry, true);
+        assert!(completed.is_empty(), "a gait does not end: {completed:?}");
+        assert!(after.contains("carry"), "and LB still held, the carry resumes: {after:?}");
     }
 
     #[test]

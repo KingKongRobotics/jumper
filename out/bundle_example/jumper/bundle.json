@@ -8,7 +8,7 @@
       "tool": "scripts/deploy.py",
       "cargo": "build --release --target wasm32-unknown-unknown --no-default-features --features web",
       "wasmBindgen": "wasm-bindgen 0.2.128",
-      "commit": "ce71f79b191766f0208dca34516564a37816c729",
+      "commit": "372819e1fe1a7c2d77e78b16f7e4968d239542d9",
       "unverifiedByTheConsumer": "A consumer's own controller is held against its own implementation by a parity test. This one is not held against anything: it arrived with the upload. A consumer that runs it should say so where the person can see it."
     },
     "mjlab": {
@@ -27,14 +27,14 @@
           "abi": "abi3-py310"
         }
       },
-      "commit": "ce71f79b191766f0208dca34516564a37816c729",
+      "commit": "372819e1fe1a7c2d77e78b16f7e4968d239542d9",
       "note": "The same source as the wasm, built for a host that imports it. Platform-specific: `abi3` frees it from the Python version, not from the machine, so it is keyed by platform: the build machine's, and win-amd64 and macosx-universal2, cross-built. macOS is keyed without a version and the one file carries arm64 and x86_64."
     },
     "board": {
       "model": "rknn",
       "file": "runtime/board/controller",
       "platform": "aarch64-unknown-linux-gnu",
-      "commit": "ce71f79b191766f0208dca34516564a37816c729",
+      "commit": "372819e1fe1a7c2d77e78b16f7e4968d239542d9",
       "note": "The robot's whole program: this crate, cross-compiled. From the bundle's directory: `./runtime/board/controller --bundle . --machine <toml>`."
     }
   },
@@ -98,6 +98,16 @@
       "action": 22,
       "trajectory": "maze.motion.trajectory.json"
     },
+    "dash": {
+      "models": {
+        "onnx": "models/dash.onnx",
+        "rknn": "models/dash.rknn"
+      },
+      "contract": "dash.json",
+      "observation": 167,
+      "action": 20,
+      "trajectory": "dash_flat.trajectory.json"
+    },
     "gesture_bow": {
       "models": {
         "onnx": "models/gesture_bow.onnx",
@@ -128,6 +138,16 @@
       "action": 22,
       "trajectory": "paw.motion.trajectory.json"
     },
+    "gesture_pump": {
+      "models": {
+        "onnx": "models/gesture_pump.onnx",
+        "rknn": "models/gesture_pump.rknn"
+      },
+      "contract": "gesture_pump.json",
+      "observation": 209,
+      "action": 22,
+      "trajectory": "pump.motion.trajectory.json"
+    },
     "gesture_salute": {
       "models": {
         "onnx": "models/gesture_salute.onnx",
@@ -137,6 +157,46 @@
       "observation": 209,
       "action": 22,
       "trajectory": "salute.motion.trajectory.json"
+    },
+    "gesture_sleep": {
+      "models": {
+        "onnx": "models/gesture_sleep.onnx",
+        "rknn": "models/gesture_sleep.rknn"
+      },
+      "contract": "gesture_sleep.json",
+      "observation": 209,
+      "action": 22,
+      "trajectory": "sleep.motion.trajectory.json"
+    },
+    "gesture_threat": {
+      "models": {
+        "onnx": "models/gesture_threat.onnx",
+        "rknn": "models/gesture_threat.rknn"
+      },
+      "contract": "gesture_threat.json",
+      "observation": 209,
+      "action": 22,
+      "trajectory": "threat.motion.trajectory.json"
+    },
+    "gesture_wave": {
+      "models": {
+        "onnx": "models/gesture_wave.onnx",
+        "rknn": "models/gesture_wave.rknn"
+      },
+      "contract": "gesture_wave.json",
+      "observation": 209,
+      "action": 22,
+      "trajectory": "wave.motion.trajectory.json"
+    },
+    "gesture_zoidberg": {
+      "models": {
+        "onnx": "models/gesture_zoidberg.onnx",
+        "rknn": "models/gesture_zoidberg.rknn"
+      },
+      "contract": "gesture_zoidberg.json",
+      "observation": 209,
+      "action": 22,
+      "trajectory": "zoidberg.motion.trajectory.json"
     },
     "jump": {
       "models": {
@@ -156,6 +216,15 @@
       "contract": "locomotion.json",
       "observation": 415,
       "action": 20
+    },
+    "sprint": {
+      "models": {
+        "onnx": "models/sprint.onnx",
+        "rknn": "models/sprint.rknn"
+      },
+      "contract": "sprint.json",
+      "observation": 415,
+      "action": 20
     }
   },
   "notes": [
@@ -163,17 +232,23 @@
     "dance_crab: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "dance_dream_wings: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "dance_maze: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
+    "dash: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "gesture_bow: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "gesture_hello: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "gesture_paw: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
+    "gesture_pump: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "gesture_salute: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
+    "gesture_sleep: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
+    "gesture_threat: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
+    "gesture_wave: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
+    "gesture_zoidberg: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "jump: its contract has no `controller` block, so a consumer falls back to its own key bindings. Re-export to carry the task's controls.yaml.",
     "reference: 24 frames, 18 of them inferences (6 in warm start or ramp)"
   ],
   "files": {
     "README.md": {
-      "bytes": 23959,
-      "sha256": "a2998c343cea54811e209711093985a98ded9509b1fa46b544375733fdcde323"
+      "bytes": 25983,
+      "sha256": "df7adf3ec8097774a679beef9b0b2b16e19fa4494ea0fa6489650815ed142677"
     },
     "bow.motion.trajectory.json": {
       "bytes": 143332,
@@ -184,16 +259,16 @@
       "sha256": "dd87589419a2928232cecb6f4378f3280285ace18886cea8079e91d448dedef9"
     },
     "claw_left.json": {
-      "bytes": 13627,
-      "sha256": "c51e495e1511c2ec0ce6f016b42aaaf65b532434e79fb24bc78b0f036e06ceb8"
+      "bytes": 13842,
+      "sha256": "2e846484f7362bb510ab91f3f3aa98db3488bdf02596665b881963dd59000a06"
     },
     "claw_right.json": {
-      "bytes": 13627,
-      "sha256": "c51e495e1511c2ec0ce6f016b42aaaf65b532434e79fb24bc78b0f036e06ceb8"
+      "bytes": 13842,
+      "sha256": "2e846484f7362bb510ab91f3f3aa98db3488bdf02596665b881963dd59000a06"
     },
     "controller.toml": {
-      "bytes": 13780,
-      "sha256": "fb8c7e7734f19e918d9fe67cc36b170ffe6ba9cc7c97d93693f874781ac1ce16"
+      "bytes": 17122,
+      "sha256": "76eca7a3a59804b1fedcfd181c564b0e923b9b4d92c464fafd0e27b7d2ddbcc8"
     },
     "dance_brazilian.json": {
       "bytes": 7107,
@@ -210,6 +285,14 @@
     "dance_maze.json": {
       "bytes": 7090,
       "sha256": "d1bd05037b5c0dff4c78732bce49cbd3331e82d612ab987bb85aeacaefad007f"
+    },
+    "dash.json": {
+      "bytes": 6695,
+      "sha256": "f4d73240614a091fb14cf5664c4c573c39d0d78c415e2f7ccbf54490021ca3f0"
+    },
+    "dash_flat.trajectory.json": {
+      "bytes": 120204,
+      "sha256": "d342009fd1cbf453a8c0a0f36075fb3173c8030946052a5c60d43288425842c6"
     },
     "demo.motion.trajectory.json": {
       "bytes": 4806304,
@@ -231,9 +314,29 @@
       "bytes": 7089,
       "sha256": "ab52e1a7e694c151aa8d0e56cbaa31fd90de436633f85a3a8e3015c88313d849"
     },
+    "gesture_pump.json": {
+      "bytes": 7095,
+      "sha256": "902ff37b4a16de6573f47f5efed5a48bdaca5de1a962bc82ddb70525c1cb7b58"
+    },
     "gesture_salute.json": {
       "bytes": 7098,
       "sha256": "d07380eae647de5ab41418ed4400a8562dd6286b52ed771770f1a777a0347012"
+    },
+    "gesture_sleep.json": {
+      "bytes": 7096,
+      "sha256": "639241187a49ff0cda30b7c8bce02ebb64092cb0d5995f4f3cbb8b296750aa42"
+    },
+    "gesture_threat.json": {
+      "bytes": 7100,
+      "sha256": "e8d1f702246bb5eba64e32da85f7584b8dd95ac9d691bffc8ed2a96de5bec543"
+    },
+    "gesture_wave.json": {
+      "bytes": 7095,
+      "sha256": "34b95463d5798370ed84fb8b6f44bbb29b7ac949bed681320baebc5450821d07"
+    },
+    "gesture_zoidberg.json": {
+      "bytes": 7107,
+      "sha256": "0c16a3f5aa7451a57b7a33ca3317acb6dc59177fdd09ce14836aa39df956d3ad"
     },
     "hello.motion.trajectory.json": {
       "bytes": 118828,
@@ -252,12 +355,12 @@
       "sha256": "6204effa319eba88e16b3d23bc1a8d005c59c3e0d074cac80f2ba233aab0e5d2"
     },
     "manual.en.json": {
-      "bytes": 30940,
-      "sha256": "a8638168b4cd4666be8d05b59d5818b956d6f9fca719dc5911e9aec23bd941c6"
+      "bytes": 42988,
+      "sha256": "5ad614f97ad65ce17b848e6591a1c315bdd541f110063fd8c912dd6d4ccae4ba"
     },
     "manual.zh.json": {
-      "bytes": 30477,
-      "sha256": "5a5bcf61e5c82ec53024814d613e7c82cba89588134a5e03fe97c8cae8c4d121"
+      "bytes": 42283,
+      "sha256": "0d74f75010d357f09885d8f52b0d20f38d6f77da323f26ef1b59bc766149548d"
     },
     "maze.motion.trajectory.json": {
       "bytes": 165743,
@@ -269,7 +372,7 @@
     },
     "models/claw_left.rknn": {
       "bytes": 931368,
-      "sha256": "1f03c2007423280cc091c0537b589b7a73d0e57de7018554a1a9df1c3b041e02"
+      "sha256": "91104909473c7d2fc78d39514b1841d640e76191a1feb213845b42bbcc4f62a5"
     },
     "models/dance_brazilian.onnx": {
       "bytes": 1129112,
@@ -277,7 +380,7 @@
     },
     "models/dance_brazilian.rknn": {
       "bytes": 731304,
-      "sha256": "d50d4b04907a5582dc405d7175711fae10a05985249b340bbc1768cc380582a1"
+      "sha256": "3047d68571d78c7e3b2ec6d01208dfa836118987953897a5911bf9852c6cfc66"
     },
     "models/dance_crab.onnx": {
       "bytes": 1129112,
@@ -285,7 +388,7 @@
     },
     "models/dance_crab.rknn": {
       "bytes": 731304,
-      "sha256": "3357191984c516f14d7ba11854bbcceed4744590b44815aeb590f1082f0ea8d3"
+      "sha256": "bc90bb453bf8d6b6ab1ce1a69059d382bec6e7e4ffb667b004139c9140577f53"
     },
     "models/dance_dream_wings.onnx": {
       "bytes": 1129112,
@@ -293,7 +396,7 @@
     },
     "models/dance_dream_wings.rknn": {
       "bytes": 731304,
-      "sha256": "68d54080e87183efa28404a54f8d6545a041bb515b9c86595fa3b27555810642"
+      "sha256": "fbe233e5ba6d6bc991b7f119de6073eff7ab350246e72da05e841f54cf78a1a4"
     },
     "models/dance_maze.onnx": {
       "bytes": 1129112,
@@ -301,7 +404,15 @@
     },
     "models/dance_maze.rknn": {
       "bytes": 731304,
-      "sha256": "e7ac95270d5094fa7bf40e51d59c45c723c3b8cd216bd708d21249129ff27163"
+      "sha256": "013486851d59d1aaeea512bb3a972dfceaaf11676996baa9ab926b664967a2ca"
+    },
+    "models/dash.onnx": {
+      "bytes": 1014038,
+      "sha256": "5655862e5ee8a7f68fa53ef9e5b35d022f66d1b3ea7005580ee13b5f9d1dbe84"
+    },
+    "models/dash.rknn": {
+      "bytes": 633704,
+      "sha256": "db06d35219cc6714bbc63ab2c402664a827d8cfdc3d8a6e7c377db0a60c875f2"
     },
     "models/gesture_bow.onnx": {
       "bytes": 1129112,
@@ -309,7 +420,7 @@
     },
     "models/gesture_bow.rknn": {
       "bytes": 731304,
-      "sha256": "c8a90db8376b43a3e055db2026fd96ae1990709ca3f4fa61138ddfdf57b98fa9"
+      "sha256": "424682fe651ee09f825182b3d1192b704e69efbeb0ea78edfa7fb0e9267de287"
     },
     "models/gesture_hello.onnx": {
       "bytes": 1129112,
@@ -317,7 +428,7 @@
     },
     "models/gesture_hello.rknn": {
       "bytes": 731304,
-      "sha256": "5e50b34e109466298532b13664aeccf9e46d85af3e95b8b7c64dbf1bfe132f1a"
+      "sha256": "63abb5ecfe333f0358dc5e6b296aa051e6f6f827f7f01413891c3acacdb9f728"
     },
     "models/gesture_paw.onnx": {
       "bytes": 1129112,
@@ -325,7 +436,15 @@
     },
     "models/gesture_paw.rknn": {
       "bytes": 731304,
-      "sha256": "500386dc433d83ea88c03a348f5fd0db2ba3161fc5e8dba9aa50765c88d3a498"
+      "sha256": "6308ed9ddbd96f3dd947faf27ee519f26adb848f9609cbfd985f779624fa8ef1"
+    },
+    "models/gesture_pump.onnx": {
+      "bytes": 1129112,
+      "sha256": "1c537e64181400502da1ec266221f0a40d3687f09762aa6102c9435a873b091d"
+    },
+    "models/gesture_pump.rknn": {
+      "bytes": 731304,
+      "sha256": "4e5a4f4c97739ff97fcb807136f457a6b79ed9edc0bca96debec1ab760b87c33"
     },
     "models/gesture_salute.onnx": {
       "bytes": 1129112,
@@ -333,7 +452,39 @@
     },
     "models/gesture_salute.rknn": {
       "bytes": 731304,
-      "sha256": "2acf0fe6e0bd72efed65045252b8d143542b08c8e53a438eae7018f78e22b7f8"
+      "sha256": "85c87ea60dcb3dfc38f8a930812e015c52ba7d9b77ddb70d7f4c4b011e259975"
+    },
+    "models/gesture_sleep.onnx": {
+      "bytes": 1129112,
+      "sha256": "f595deadb8c1b7f423c254fb4eee15487bfd7e5f8ca915d1ce69845197918650"
+    },
+    "models/gesture_sleep.rknn": {
+      "bytes": 731304,
+      "sha256": "8fc769bd4626e97c9b8ec193ab4822226586693d130c75899e02c13e130d368a"
+    },
+    "models/gesture_threat.onnx": {
+      "bytes": 1129112,
+      "sha256": "0158f26f291ec033d96c8e5a7745ae4e2746da25c06a3415f81d986129f3f4d7"
+    },
+    "models/gesture_threat.rknn": {
+      "bytes": 731304,
+      "sha256": "69f50f4bf1e498da00f72f9ac419dbd20c9b48056b9b1fb42e4f811431ef0bd3"
+    },
+    "models/gesture_wave.onnx": {
+      "bytes": 1129112,
+      "sha256": "5cdc8dbf88f508436d95edc16c7aad0dc81de1be7017e9b3ee22fe2410036c71"
+    },
+    "models/gesture_wave.rknn": {
+      "bytes": 731304,
+      "sha256": "674c5422f4c66493de459ddb9fa6bb8cd31dbf27ee6fe2d2c7370534f749ec7e"
+    },
+    "models/gesture_zoidberg.onnx": {
+      "bytes": 1129112,
+      "sha256": "092b49c56f6d9a5df33ab3b03bb4235eaa0976398d1d9ad326c2a80a6e0ef45c"
+    },
+    "models/gesture_zoidberg.rknn": {
+      "bytes": 731304,
+      "sha256": "41ff0380d5c266c1c3d9774ccdbd29146d318881b49db54ab4c498ce28e09d0b"
     },
     "models/jump.onnx": {
       "bytes": 1014038,
@@ -341,7 +492,7 @@
     },
     "models/jump.rknn": {
       "bytes": 633704,
-      "sha256": "ac8d75611b4f783c6f7e2828301600e3b4e5f0558ba79f8c97097ef751a24f32"
+      "sha256": "3330cfa18ce08d973e552d194d39da0c2b98a91301b9e785bbdaa1d873f73c93"
     },
     "models/locomotion.onnx": {
       "bytes": 1552128,
@@ -349,43 +500,75 @@
     },
     "models/locomotion.rknn": {
       "bytes": 932136,
-      "sha256": "8043aacbbec7fbf97f17d3ed447e91eb2e32027de5600cb728b76378f90e662c"
+      "sha256": "fd4eeeb1ebf3468497113a1b12adb6241c5d7cff2e95a180f75e3aa6d88c47f3"
+    },
+    "models/sprint.onnx": {
+      "bytes": 1552128,
+      "sha256": "3a0014754f16e91317d59f162c70a25c97f9ac56cabfdf819c1c914d6c3f330a"
+    },
+    "models/sprint.rknn": {
+      "bytes": 932136,
+      "sha256": "773a355a0ec9a8916c58b4c70972ea27c8fe547dd14a4deb0f241c618b8644e9"
     },
     "paw.motion.trajectory.json": {
       "bytes": 102094,
       "sha256": "4e4ac350a6b6ff33749c385d3a963552e1565ef8ecfd3ad0405c3aacfca66295"
     },
+    "pump.motion.trajectory.json": {
+      "bytes": 172752,
+      "sha256": "665baa0646207dc2592c5f3df614f8d4cdb2a52d14387efae27a0103a359cf0b"
+    },
     "reference.json": {
       "bytes": 183530,
-      "sha256": "3715ef8bd98e702954fda2492d93091a7600fb1ecae6d45ddf5ab8044597fd36"
+      "sha256": "3c262508bef76541eb56fd7334341f9cb685061b174d55a8ef909efaf3b7ccb0"
     },
     "runtime/board/controller": {
-      "bytes": 1634288,
-      "sha256": "0bda9776013435bec54739c144303fd03c8f301e216e44b88bfd99c5807d0a39"
+      "bytes": 1634312,
+      "sha256": "4a7540099ce7281abe11d21081bd0b20af65a2fac03b11302bb2711a436f381e"
     },
     "runtime/mjlab/linux-x86_64/controller.so": {
-      "bytes": 2099984,
-      "sha256": "df4b4a73be054955f25d005a32e0abb807baf734c7699ce55a6b429675781e28"
+      "bytes": 2032240,
+      "sha256": "73f91dc91622d1833d43208a55b9dda11a2db185950b122bbba2d64f9194c18b"
     },
     "runtime/mjlab/macosx-universal2/controller.so": {
       "bytes": 6467280,
-      "sha256": "e079122ae93e48c19606c4155aba6f3adae25eaa9ab85e69fb4bb2feb16e62f7"
+      "sha256": "c0a5661bcdd560ff7c8c706c4ea177bcaf8d35fd76896c423994e4e077438b6c"
     },
     "runtime/mjlab/win-amd64/controller.pyd": {
-      "bytes": 3297549,
-      "sha256": "a1103975f1f710ed467694e2333cfc9c7ab00b51317922fa284d4c315b5e2906"
+      "bytes": 3299597,
+      "sha256": "7aa958613cf70085d3fe743504e300c9dfe609f45a667e375bb8bb28ba20d231"
     },
     "runtime/web/controller.js": {
       "bytes": 29783,
       "sha256": "dde2baa0c7ed5fa5de30e6d53128721959853929c29fa131f64de8100380e59e"
     },
     "runtime/web/controller.wasm": {
-      "bytes": 1357577,
-      "sha256": "5ca0cf7a917cecbe95f5e2ff0b4392ae7564c3c758958a7742c06c5214d73982"
+      "bytes": 1232111,
+      "sha256": "a97a689640bc2d6b7c6d194706f5a12ecd9fce85a984094386babd4444f87906"
     },
     "salute.motion.trajectory.json": {
       "bytes": 98320,
       "sha256": "f880c52b9a8250ab84031cf12305631ace17afe0b3ae40d07adb4f684e386985"
+    },
+    "sleep.motion.trajectory.json": {
+      "bytes": 317164,
+      "sha256": "93ccc3b1f22b2ce99de69ab6de47bc01ebb5e1ac59ff2211886b21b627bc4ae8"
+    },
+    "sprint.json": {
+      "bytes": 14567,
+      "sha256": "189bd730b3991beb28d336fb87fffd108599e83a1e64491f45ac5c877811ee1f"
+    },
+    "threat.motion.trajectory.json": {
+      "bytes": 176137,
+      "sha256": "0d88f32ad579191b8791b325596a091df431b5b864e475c582cbd39a2c8e23d2"
+    },
+    "wave.motion.trajectory.json": {
+      "bytes": 191432,
+      "sha256": "90a5fca62ab0999176db9640796f2508e6e339503b1bad50c96cd2eab8423259"
+    },
+    "zoidberg.motion.trajectory.json": {
+      "bytes": 181862,
+      "sha256": "f9e8484a2e06a9470ce3c5671ae84d1c115cc5932a7abadeda80cd0b05590d44"
     }
   },
   "reference": "reference.json",
@@ -422,7 +605,7 @@
     },
     "claw_left": {
       "task": "jumper.five_foot",
-      "from": "logs/jumper/jumper.five_foot/2026-09-28_08-38-48/model_86600.pt",
+      "from": "tasks/jumper/five_foot/out/example/model_86600.pt",
       "export": "tasks/jumper/five_foot/out/example",
       "hook": {
         "side": "left"
@@ -448,7 +631,7 @@
     },
     "claw_right": {
       "task": "jumper.five_foot",
-      "from": "logs/jumper/jumper.five_foot/2026-09-28_08-38-48/model_86600.pt",
+      "from": "tasks/jumper/five_foot/out/example/model_86600.pt",
       "export": "tasks/jumper/five_foot/out/example",
       "hook": {
         "side": "right"
@@ -721,6 +904,167 @@
         "key": [
           "key_4",
           "keypad_4"
+        ],
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      }
+    },
+    "gesture_sleep": {
+      "task": "jumper.gesture_sleep",
+      "from": "logs/jumper/jumper.gesture_sleep/2026-10-13_08-02-39/model_600.pt",
+      "export": "tasks/jumper/gesture_sleep/out/example",
+      "pad": {
+        "button": "Y",
+        "on": "toggle",
+        "from": [
+          "locomotion",
+          "claw_left",
+          "claw_right"
+        ]
+      },
+      "keys": {
+        "key": [
+          "key_q"
+        ],
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      }
+    },
+    "gesture_zoidberg": {
+      "task": "jumper.gesture_zoidberg",
+      "from": "logs/jumper/jumper.gesture_zoidberg/2026-10-13_03-20-04/model_2499.pt",
+      "export": "tasks/jumper/gesture_zoidberg/out/example",
+      "pad": {
+        "button": "X",
+        "on": "toggle",
+        "from": [
+          "locomotion",
+          "claw_left",
+          "claw_right"
+        ]
+      },
+      "keys": {
+        "key": [
+          "key_g"
+        ],
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      }
+    },
+    "gesture_threat": {
+      "task": "jumper.gesture_threat",
+      "from": "logs/jumper/jumper.gesture_threat/2026-10-14_07-54-12/model_2499.pt",
+      "export": "tasks/jumper/gesture_threat/out/example",
+      "pad": {
+        "button": "X",
+        "on": "toggle",
+        "with": "menu",
+        "from": [
+          "locomotion",
+          "claw_left",
+          "claw_right"
+        ]
+      },
+      "keys": {
+        "key": [
+          "keypad_7"
+        ],
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      }
+    },
+    "gesture_pump": {
+      "task": "jumper.gesture_pump",
+      "from": "logs/jumper/jumper.gesture_pump/2026-10-14_09-48-45/model_2499.pt",
+      "export": "tasks/jumper/gesture_pump/out/example",
+      "pad": {
+        "button": "Y",
+        "on": "toggle",
+        "with": "menu",
+        "from": [
+          "locomotion",
+          "claw_left",
+          "claw_right"
+        ]
+      },
+      "keys": {
+        "key": [
+          "keypad_8"
+        ],
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      }
+    },
+    "gesture_wave": {
+      "task": "jumper.gesture_wave",
+      "from": "logs/jumper/jumper.gesture_wave/2026-10-14_11-36-34/model_2499.pt",
+      "export": "tasks/jumper/gesture_wave/out/example",
+      "pad": {
+        "button": "A",
+        "on": "toggle",
+        "with": "menu",
+        "from": [
+          "locomotion",
+          "claw_left",
+          "claw_right"
+        ]
+      },
+      "keys": {
+        "key": [
+          "keypad_9"
+        ],
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      }
+    },
+    "sprint": {
+      "task": "jumper.sprint",
+      "from": "logs/jumper/jumper.sprint/2026-10-14_14-51-08/model_77799.pt",
+      "export": "tasks/jumper/sprint/out/example",
+      "pad": {
+        "button": "LB",
+        "on": "toggle",
+        "with": "menu",
+        "from": [
+          "locomotion"
+        ]
+      },
+      "keys": {
+        "key": [
+          "keypad_6"
+        ],
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      }
+    },
+    "dash": {
+      "task": "jumper.dash",
+      "from": "logs/jumper/jumper.dash/2026-10-14_20-53-48/model_6598.pt",
+      "export": "tasks/jumper/dash/out/example",
+      "pad": {
+        "button": "L3",
+        "on": "toggle",
+        "from": [
+          "locomotion"
+        ]
+      },
+      "keys": {
+        "key": [
+          "keypad_5"
         ],
         "on": "toggle",
         "from": [

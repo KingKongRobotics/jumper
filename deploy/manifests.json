@@ -17,7 +17,6 @@
     "the cascade, the safety limits and any state that runs no model. Two files",
     "naming the same key is how the two come to disagree."
   ],
-
   "_controls": [
     "A mode's switches are one per device: `pad` and `keys`, which have nothing to",
     "do with each other (since 2026-09-29; before, a mode had one `button` and one",
@@ -69,7 +68,6 @@
     "",
     "The `controls` skill covers all of this, and is where to start."
   ],
-
   "_hooks": [
     "A mode may carry `hook`, its task's deploy configuration, a JSON object the",
     "bundler copies into the mode's [[fsm.state]] beside its task id. On the robot",
@@ -89,24 +87,69 @@
   ],
   "bundles": {
     "jumper": {
-      "description": "jumper.posture walking by default -- the walk and the body's posture from the pad or, as a path of its own, the keyboard -- with the jump on A (Space), jumper.five_foot's claw carried on the left on LB (V) or on the right on RB (B), four dances on Menu + the d-pad (Ctrl + 1 2 3 4), four gestures on the d-pad alone (1 2 3 4), and Menu (Ctrl) on its own to leave a dance or a gesture. Laid out as the robot's operator guide, Control-agent 3.1, lays it out (section 二, as revised on 2026-09-29).",
+      "description": "jumper.posture walking by default -- the walk and the body's posture from the pad or, as a path of its own, the keyboard -- with the jump on A (Space), jumper.five_foot's claw carried on the left on LB (V) or on the right on RB (B), four dances on Menu + the d-pad (Ctrl + 1 2 3 4), four gestures on the d-pad alone (1 2 3 4), and Menu (Ctrl) on its own to leave a dance or a gesture. Laid out as the robot's operator guide, Control-agent 3.1, lays it out (section 二, as revised on 2026-09-29). Plus the Zoidberg gesture on X (G), 2026-10-13.",
       "fsm": "jumper.controller.toml",
-
       "_leave": "Menu let go on its own -- Ctrl on the keyboard -- interrupts whichever dance or gesture is running and the robot goes back to the default mode, locomotion (Control-agent 3.1: 单击Menu退出舞蹈回到初始姿态; asked for on 2026-09-29, the fixed actions included). `fall`, and the chord that chose a dance spends the modifier, so reaching for Menu + up does not leave on the way. Not the jump: leaving a jump in the air is a robot landing out of its landing, so only A (Space) pressed again ends one early.",
       "leave": [
         {
           "name": "leave_motion",
-          "leaves": ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                     "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"],
-          "pad": {"button": "menu", "on": "fall",
-                  "from": ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                           "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]},
-          "keys": {"key": ["ctrl"], "on": "fall",
-                   "from": ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                            "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]}
+          "leaves": [
+            "dance_crab",
+            "dance_brazilian",
+            "dance_maze",
+            "dance_dream_wings",
+            "gesture_hello",
+            "gesture_bow",
+            "gesture_paw",
+            "gesture_salute",
+            "gesture_zoidberg",
+            "gesture_sleep",
+            "gesture_threat",
+            "gesture_pump",
+            "gesture_wave"
+          ],
+          "pad": {
+            "button": "menu",
+            "on": "fall",
+            "from": [
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute",
+              "gesture_zoidberg",
+              "gesture_sleep",
+              "gesture_threat",
+              "gesture_pump",
+              "gesture_wave"
+            ]
+          },
+          "keys": {
+            "key": [
+              "ctrl"
+            ],
+            "on": "fall",
+            "from": [
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute",
+              "gesture_zoidberg",
+              "gesture_sleep",
+              "gesture_threat",
+              "gesture_pump",
+              "gesture_wave"
+            ]
+          }
         }
       ],
-
       "modes": {
         "locomotion": {
           "task": "jumper.posture",
@@ -116,126 +159,506 @@
           "policy": "tasks/jumper/posture/out/example",
           "_reached_by": "No switch: with one mode the cascade's `always` rule is how you get there, and every other mode hands back to it when it ends or is left."
         },
-
         "jump": {
           "task": "jumper.jump",
           "_note": "A reference-guided policy: its action is a residual on the recording named by the contract's `reference` block, and the bundler copies that trajectory in beside the contract. It does not run without it. The block says `starts_on_entry`: the recording starts when the policy takes over, once the switch-in ramp has reached the jump's home pose, and 1.17 s later it has played out, the host releases the latch, and the cascade hands back.",
           "policy": "tasks/jumper/jump/out/example",
           "_reached_by": "A, or Space: pressing it is the whole of asking for a jump. `toggle` because a mode has to stay entered through the ramp and the recording; a second press before it lands leaves the jump mid-motion. From locomotion only (Control-agent 3.1; asked for on 2026-09-29): in a claw mode Space closes the claw, and A does nothing there, on the pad as on the keys.",
-          "pad": {"button": "A", "on": "toggle", "from": ["locomotion"]},
-          "keys": {"key": ["key_space"], "on": "toggle", "from": ["locomotion"]}
+          "pad": {
+            "button": "A",
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_space"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
         },
-
         "claw_left": {
           "task": "jumper.five_foot",
           "_note": "Walking on five feet with the front-left arm carried as a claw, the side the policy was trained on. The `hook` is required rather than a formality: tasks/jumper/five_foot/deploy/lib.rs is also what closes the claw -- `claw_left`, LT or Space, as far as it is held -- and what holds the arm out while the d-pad's up, down or left (Shift, Alt, Ctrl) is held.",
           "policy": "tasks/jumper/five_foot/out/example",
           "_reached_by": "LB, or V. Pressed again it hands back to locomotion. The two claws are one latch at a time (Control-agent 3.1: 与Rb互斥): RB, or B, in this mode is the right claw at once. From locomotion and from the other claw; a dance or a jump is left first.",
-          "hook": { "side": "left" },
-          "pad": {"button": "LB", "on": "toggle", "from": ["locomotion", "claw_right"]},
-          "keys": {"key": ["key_v"], "on": "toggle", "from": ["locomotion", "claw_right"]}
+          "hook": {
+            "side": "left"
+          },
+          "pad": {
+            "button": "LB",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_right"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_v"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_right"
+            ]
+          }
         },
-
         "claw_right": {
           "task": "jumper.five_foot",
           "_note": "The same export with the claw on the right: the hook shows the policy the robot mirrored in its own x-z plane, so it still sees the claw on the left, and mirrors the action back. The claw closes on `claw_right`, RT or Space; the arm's presets are the left's, mirrored -- the thumb's direction is the hand's own.",
           "policy": "tasks/jumper/five_foot/out/example",
           "_reached_by": "RB, or B. Pressed again it hands back; LB, or V, is the left claw at once. B was the keyboard's release until the doc put this claw on it (2026-09-29); Esc is.",
-          "hook": { "side": "right" },
-          "pad": {"button": "RB", "on": "toggle", "from": ["locomotion", "claw_left"]},
-          "keys": {"key": ["key_b"], "on": "toggle", "from": ["locomotion", "claw_left"]}
+          "hook": {
+            "side": "right"
+          },
+          "pad": {
+            "button": "RB",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_b"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left"
+            ]
+          }
         },
-
         "dance_crab": {
           "task": "jumper.dance",
           "_note": "螃蟹舞, the crab dance: jumper.dance's demonstration clip. Not a residual: the policy drives the joints outright and the recording is what it is scored against. It starts when you switch into it and ends by itself, after which the cascade hands back.",
           "policy": "tasks/jumper/dance/out/example",
           "_reached_by": "Menu held, then up on the d-pad; Ctrl + 1 on the keyboard (the main row or the keypad). From locomotion, a claw mode (the pad's chord leaves it on the press), another dance or a gesture; the keyboard's not from a claw mode, whose Ctrl is the arm's. While Menu (Ctrl) is held the d-pad (the digit) answers only the chord, so this is never also the gesture on up (1).",
-          "pad": {"button": "dpad_up", "with": "menu", "on": "toggle",
-                  "from": ["locomotion", "claw_left", "claw_right",
-                           "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                           "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]},
-          "keys": {"key": ["key_1", "keypad_1"], "with": "ctrl", "on": "toggle",
-                   "from": ["locomotion", "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                            "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]}
+          "pad": {
+            "button": "dpad_up",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_1",
+              "keypad_1"
+            ],
+            "with": "ctrl",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          }
         },
-
         "dance_brazilian": {
           "task": "jumper.dance_brazilian",
           "_note": "巴西顺拐舞, the Brazilian dance, from rl-wbc-fsm's dance_baxi. Ends by itself.",
           "policy": "tasks/jumper/dance_brazilian/out/example",
           "_reached_by": "Menu + down on the d-pad; Ctrl + 2.",
-          "pad": {"button": "dpad_down", "with": "menu", "on": "toggle",
-                  "from": ["locomotion", "claw_left", "claw_right",
-                           "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                           "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]},
-          "keys": {"key": ["key_2", "keypad_2"], "with": "ctrl", "on": "toggle",
-                   "from": ["locomotion", "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                            "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]}
+          "pad": {
+            "button": "dpad_down",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_2",
+              "keypad_2"
+            ],
+            "with": "ctrl",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          }
         },
-
         "dance_maze": {
           "task": "jumper.dance_maze",
           "_note": "迷核舞, the maze dance, from rl-wbc-fsm's dance_maze. Ends by itself.",
           "policy": "tasks/jumper/dance_maze/out/example",
           "_reached_by": "Menu + left on the d-pad; Ctrl + 3.",
-          "pad": {"button": "dpad_left", "with": "menu", "on": "toggle",
-                  "from": ["locomotion", "claw_left", "claw_right",
-                           "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                           "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]},
-          "keys": {"key": ["key_3", "keypad_3"], "with": "ctrl", "on": "toggle",
-                   "from": ["locomotion", "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                            "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]}
+          "pad": {
+            "button": "dpad_left",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_3",
+              "keypad_3"
+            ],
+            "with": "ctrl",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          }
         },
-
         "dance_dream_wings": {
           "task": "jumper.dance_dream_wings",
           "_note": "梦的翅膀, the dream-wings dance, from rl-wbc-fsm's dance_dream_wings. Ends by itself. The waist dance (jumper.dance_waist) is not in Control-agent 3.1's section 二 and is not in this bundle.",
           "policy": "tasks/jumper/dance_dream_wings/out/example",
           "_reached_by": "Menu + right on the d-pad; Ctrl + 4.",
-          "pad": {"button": "dpad_right", "with": "menu", "on": "toggle",
-                  "from": ["locomotion", "claw_left", "claw_right",
-                           "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                           "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]},
-          "keys": {"key": ["key_4", "keypad_4"], "with": "ctrl", "on": "toggle",
-                   "from": ["locomotion", "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings",
-                            "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]}
+          "pad": {
+            "button": "dpad_right",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_4",
+              "keypad_4"
+            ],
+            "with": "ctrl",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "dance_crab",
+              "dance_brazilian",
+              "dance_maze",
+              "dance_dream_wings",
+              "gesture_hello",
+              "gesture_bow",
+              "gesture_paw",
+              "gesture_salute"
+            ]
+          }
         },
-
         "gesture_hello": {
           "task": "jumper.gesture_hello",
           "_note": "Waving hello: rl-wbc-fsm's action_hello, on the same direction of the d-pad there. The robot leans back on four legs and waves the left front arm overhead, six times; 7.3 s from HOME back to HOME, then it hands back by itself.",
           "policy": "tasks/jumper/gesture_hello/out/example",
           "_reached_by": "Up on the d-pad; 1 on the keyboard (the main row or the keypad). From locomotion only (Control-agent 3.1: 行走模式下); in a claw mode the d-pad is the arm's, and Shift, Alt and Ctrl too.",
-          "pad": {"button": "dpad_up", "on": "toggle", "from": ["locomotion"]},
-          "keys": {"key": ["key_1", "keypad_1"], "on": "toggle", "from": ["locomotion"]}
+          "pad": {
+            "button": "dpad_up",
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_1",
+              "keypad_1"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
         },
-
         "gesture_bow": {
           "task": "jumper.gesture_bow",
           "_note": "A bow with the paws pressed together: rl-wbc-fsm's action_bow (作揖), on the same direction there. 8.6 s from HOME back to HOME, and the only gesture that moves all 22 joints; the claws meet earlier than the recording expects and stop at touching. Ends by itself.",
           "policy": "tasks/jumper/gesture_bow/out/example",
           "_reached_by": "Down on the d-pad; 2. From locomotion only (Control-agent 3.1: 行走模式下); in a claw mode the d-pad is the arm's, and Shift, Alt and Ctrl too.",
-          "pad": {"button": "dpad_down", "on": "toggle", "from": ["locomotion"]},
-          "keys": {"key": ["key_2", "keypad_2"], "on": "toggle", "from": ["locomotion"]}
+          "pad": {
+            "button": "dpad_down",
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_2",
+              "keypad_2"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
         },
-
         "gesture_paw": {
           "task": "jumper.gesture_paw",
           "_note": "Offering a paw: rl-wbc-fsm's action_shake, on the same direction there, which Control-agent 3.1 lists as 激灵抖动 (a shake) and which plays a paw offered -- the task is named for what it does (tasks/jumper/gesture_paw/__init__.py). 6.4 s; ends by itself.",
           "policy": "tasks/jumper/gesture_paw/out/example",
           "_reached_by": "Left on the d-pad; 3. From locomotion only (Control-agent 3.1: 行走模式下); in a claw mode the d-pad is the arm's, and Shift, Alt and Ctrl too.",
-          "pad": {"button": "dpad_left", "on": "toggle", "from": ["locomotion"]},
-          "keys": {"key": ["key_3", "keypad_3"], "on": "toggle", "from": ["locomotion"]}
+          "pad": {
+            "button": "dpad_left",
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_3",
+              "keypad_3"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
         },
-
         "gesture_salute": {
           "task": "jumper.gesture_salute",
           "_note": "A salute: rl-wbc-fsm's action_salute, on the same direction there. 6.0 s, rising 48 mm above standing at the top; ends by itself. The largest joint error of the four at the end of training (0.30 rad), the first to watch on the robot.",
           "policy": "tasks/jumper/gesture_salute/out/example",
           "_reached_by": "Right on the d-pad; 4. From locomotion only (Control-agent 3.1: 行走模式下); in a claw mode the d-pad is the arm's, and Shift, Alt and Ctrl too.",
-          "pad": {"button": "dpad_right", "on": "toggle", "from": ["locomotion"]},
-          "keys": {"key": ["key_4", "keypad_4"], "on": "toggle", "from": ["locomotion"]}
+          "pad": {
+            "button": "dpad_right",
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_4",
+              "keypad_4"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
+        },
+        "gesture_sleep": {
+          "task": "jumper.gesture_sleep",
+          "policy": "tasks/jumper/gesture_sleep/out/example",
+          "_why": "The sleep: the body settles to its lowest stance, nose down, and breathes, then rises (tools/fetch/make_sleep.py). Y from the walk or a claw mode, as the Zoidberg is; it returns to locomotion when its clip ends, as the gestures do. Trained rather than driven through the posture mode because the posture policy keeps balancing at its lowest height and jiggles.",
+          "pad": {
+            "button": "Y",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_q"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
+        },
+        "gesture_zoidberg": {
+          "task": "jumper.gesture_zoidberg",
+          "policy": "tasks/jumper/gesture_zoidberg/out/example",
+          "_why": "The Zoidberg: both claws straight up, swaying, snapping (tools/fetch/make_zoidberg.py). X from the walk or a claw mode, as the dances are; it returns to locomotion when its clip ends, as the gestures do.",
+          "pad": {
+            "button": "X",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right"
+            ]
+          },
+          "keys": {
+            "key": [
+              "key_g"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
+        },
+        "gesture_threat": {
+          "task": "jumper.gesture_threat",
+          "policy": "tasks/jumper/gesture_threat/out/example",
+          "_why": "The threat display: reared nose-up, both claws spread wide and high, sweeping in and snapping (tools/battle/make_threat.py). The blue crab's taunt at the bell of the crab battle; Menu + X from the walk or a claw mode.",
+          "pad": {
+            "button": "X",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right"
+            ]
+          },
+          "keys": {
+            "key": [
+              "keypad_7"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
+        },
+        "gesture_pump": {
+          "task": "jumper.gesture_pump",
+          "policy": "tasks/jumper/gesture_pump/out/example",
+          "_why": "The claw pump: both claws straight up, the body bouncing twice a second, the claws snapping at the bottom of every bounce (tools/battle/make_pump.py). The red crab's victory dance; Menu + Y.",
+          "pad": {
+            "button": "Y",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right"
+            ]
+          },
+          "keys": {
+            "key": [
+              "keypad_8"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
+        },
+        "gesture_wave": {
+          "task": "jumper.gesture_wave",
+          "policy": "tasks/jumper/gesture_wave/out/example",
+          "_why": "The wave: claws spread, the body rolling side to side, the high-side claw rising and snapping with each roll (tools/battle/make_wave.py). The blue crab's victory dance; Menu + A.",
+          "pad": {
+            "button": "A",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion",
+              "claw_left",
+              "claw_right"
+            ]
+          },
+          "keys": {
+            "key": [
+              "keypad_9"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
+        },
+        "sprint": {
+          "task": "jumper.sprint",
+          "policy": "tasks/jumper/sprint/out/example",
+          "_why": "The dash: jumper.posture again at a 1.2 m/s ceiling (tasks/jumper/sprint), the same sticks and keys. The crab battle's bull charges in it (tools/battle/pilots/brain.py); Menu + LB from locomotion (B is locomotion's own let-go, and every plain button is taken), the chord again to walk.",
+          "pad": {
+            "button": "LB",
+            "with": "menu",
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "keys": {
+            "key": [
+              "keypad_6"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          }
+        },
+        "dash": {
+          "task": "jumper.dash",
+          "policy": "tasks/jumper/dash/out/example",
+          "pad": {
+            "button": "L3",
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "keys": {
+            "key": [
+              "keypad_5"
+            ],
+            "on": "toggle",
+            "from": [
+              "locomotion"
+            ]
+          },
+          "_why": "The dash: the high jump's recording carried 0.47 m forward (tasks/jumper/dash). The crab battle's bull hops at its foe with it (tools/battle/pilots/brain.py); L3 from the walk (Num 5), and it hands back to locomotion when the hop ends, as the jump does."
         }
       }
     }

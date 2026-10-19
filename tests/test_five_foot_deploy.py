@@ -185,6 +185,6 @@ def test_each_claw_answers_the_control_its_task_declares() -> None:
     assert sides == {"left": "claw_left", "right": "claw_right"}, sides
     kept = load_controls(Path(REPO / "tasks/jumper/five_foot/controls.yaml")).task
     arm = set(_rust_strings("ARM_CONTROLS"))
-    assert arm == {"arm_thumb_up", "arm_thumb_down", "arm_web_up"}, arm
+    assert arm == {"arm_thumb_up", "arm_thumb_down", "arm_web_up", "arm_to_face"}, arm
     assert set(sides.values()) | arm == set(kept)
     assert sides["left"] == CONTROL

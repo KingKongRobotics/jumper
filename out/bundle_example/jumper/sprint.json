@@ -1,0 +1,608 @@
+{
+  "_source": "scripts/export.py -- re-export whenever the env / robot / agent config changes",
+  "_checkpoint": {
+    "path": "logs/jumper/jumper.sprint/2026-10-14_14-51-08/model_77799.pt",
+    "run": "logs/jumper/jumper.sprint/2026-10-14_14-51-08",
+    "iteration": "model_77799"
+  },
+  "_schema": "isaac_layout v1",
+  "obs_joint_order": [
+    "LF_J0_joint",
+    "LF_J1_joint",
+    "LF_J2_joint",
+    "LF_J3_joint",
+    "RF_J0_joint",
+    "RF_J1_joint",
+    "RF_J2_joint",
+    "RF_J3_joint",
+    "LM_J0_joint",
+    "LM_J1_joint",
+    "LM_J2_joint",
+    "RM_J0_joint",
+    "RM_J1_joint",
+    "RM_J2_joint",
+    "LR_J0_joint",
+    "LR_J1_joint",
+    "LR_J2_joint",
+    "RR_J0_joint",
+    "RR_J1_joint",
+    "RR_J2_joint"
+  ],
+  "wire_joint_order": [
+    "LF_J0_joint",
+    "LF_J1_joint",
+    "LF_J2_joint",
+    "LF_J3_joint",
+    "LF_J4_joint",
+    "RF_J0_joint",
+    "RF_J1_joint",
+    "RF_J2_joint",
+    "RF_J3_joint",
+    "RF_J4_joint",
+    "LM_J0_joint",
+    "LM_J1_joint",
+    "LM_J2_joint",
+    "RM_J0_joint",
+    "RM_J1_joint",
+    "RM_J2_joint",
+    "LR_J0_joint",
+    "LR_J1_joint",
+    "LR_J2_joint",
+    "RR_J0_joint",
+    "RR_J1_joint",
+    "RR_J2_joint"
+  ],
+  "action_joint_order": [
+    "LF_J0_joint",
+    "LF_J1_joint",
+    "LF_J2_joint",
+    "LF_J3_joint",
+    "RF_J0_joint",
+    "RF_J1_joint",
+    "RF_J2_joint",
+    "RF_J3_joint",
+    "LM_J0_joint",
+    "LM_J1_joint",
+    "LM_J2_joint",
+    "RM_J0_joint",
+    "RM_J1_joint",
+    "RM_J2_joint",
+    "LR_J0_joint",
+    "LR_J1_joint",
+    "LR_J2_joint",
+    "RR_J0_joint",
+    "RR_J1_joint",
+    "RR_J2_joint"
+  ],
+  "unactuated_joints": {
+    "LF_J4_joint": 0.0,
+    "RF_J4_joint": 0.0
+  },
+  "action_scale": 0.25,
+  "use_default_offset": true,
+  "default_joint_pos": {
+    "LF_J0_joint": -0.5507000088691711,
+    "LF_J1_joint": -1.0657999515533447,
+    "LF_J2_joint": -0.4408000111579895,
+    "LF_J3_joint": -1.3739999532699585,
+    "LF_J4_joint": 0.0,
+    "RF_J0_joint": 0.5523999929428101,
+    "RF_J1_joint": -1.065999984741211,
+    "RF_J2_joint": 0.4413999915122986,
+    "RF_J3_joint": 1.4172999858856201,
+    "RF_J4_joint": 0.0,
+    "LM_J0_joint": 0.0012000000569969416,
+    "LM_J1_joint": 0.5356000065803528,
+    "LM_J2_joint": -1.8271000385284424,
+    "RM_J0_joint": -0.0012000000569969416,
+    "RM_J1_joint": -0.5375999808311462,
+    "RM_J2_joint": 1.8313000202178955,
+    "LR_J0_joint": 0.6312999725341797,
+    "LR_J1_joint": 0.5533999800682068,
+    "LR_J2_joint": -1.864799976348877,
+    "RR_J0_joint": -0.6326000094413757,
+    "RR_J1_joint": -0.5547999739646912,
+    "RR_J2_joint": 1.867799997329712
+  },
+  "joint_limits": {
+    "LF_J0_joint": [
+      -2.75,
+      0.699999988079071
+    ],
+    "LF_J1_joint": [
+      -4.75,
+      1.399999976158142
+    ],
+    "LF_J2_joint": [
+      -2.200000047683716,
+      1.649999976158142
+    ],
+    "LF_J3_joint": [
+      -2.0999999046325684,
+      1.649999976158142
+    ],
+    "LF_J4_joint": [
+      -1.600000023841858,
+      0.10000000149011612
+    ],
+    "RF_J0_joint": [
+      -0.699999988079071,
+      2.75
+    ],
+    "RF_J1_joint": [
+      -4.75,
+      1.399999976158142
+    ],
+    "RF_J2_joint": [
+      -1.649999976158142,
+      2.200000047683716
+    ],
+    "RF_J3_joint": [
+      -1.649999976158142,
+      2.0999999046325684
+    ],
+    "RF_J4_joint": [
+      -0.10000000149011612,
+      1.600000023841858
+    ],
+    "LM_J0_joint": [
+      -0.75,
+      1.0
+    ],
+    "LM_J1_joint": [
+      -2.4000000953674316,
+      1.5
+    ],
+    "LM_J2_joint": [
+      -2.4000000953674316,
+      1.7999999523162842
+    ],
+    "RM_J0_joint": [
+      -1.0,
+      0.75
+    ],
+    "RM_J1_joint": [
+      -1.5,
+      2.4000000953674316
+    ],
+    "RM_J2_joint": [
+      -1.7999999523162842,
+      2.4000000953674316
+    ],
+    "LR_J0_joint": [
+      -0.6000000238418579,
+      2.75
+    ],
+    "LR_J1_joint": [
+      -2.4000000953674316,
+      1.600000023841858
+    ],
+    "LR_J2_joint": [
+      -2.4000000953674316,
+      1.7999999523162842
+    ],
+    "RR_J0_joint": [
+      -2.75,
+      0.6000000238418579
+    ],
+    "RR_J1_joint": [
+      -1.600000023841858,
+      2.4000000953674316
+    ],
+    "RR_J2_joint": [
+      -1.7999999523162842,
+      2.4000000953674316
+    ]
+  },
+  "base_height": 0.10647,
+  "base_init_pos": [
+    0.0,
+    0.0,
+    0.10647
+  ],
+  "control": {
+    "kp": 10.0,
+    "kd": 0.5,
+    "effort_limit": 1.746399998664856,
+    "decimation": 5,
+    "sim_dt": 0.001,
+    "control_dt": 0.005,
+    "control_hz": 200.0
+  },
+  "observation": {
+    "dim": 415,
+    "history_length": 1,
+    "history_order": "oldest_first",
+    "history_stride_note": "One or more terms carry `history_stride` > 1. Those terms' frames are NOT consecutive control steps: frame i counts back i*stride steps from now, oldest first. Build them by keeping a ring of stride*(length-1)+1 frames and emitting every stride-th, newest included. A builder that shifts one frame per inference -- which is what rl-wbc-fsm's ObservationBuilder does today -- produces the right SHAPE from a window stride times too short, and nothing will report it.",
+    "normalization": "baked_into_onnx",
+    "terms": [
+      {
+        "name": "base_ang_vel",
+        "dim": 3,
+        "offset": 0,
+        "params": {
+          "sensor_name": "robot/imu_ang_vel"
+        }
+      },
+      {
+        "name": "projected_gravity",
+        "dim": 3,
+        "offset": 3
+      },
+      {
+        "name": "joint_pos",
+        "dim": 100,
+        "offset": 6,
+        "params": {
+          "biased": true,
+          "_history_frames": 5,
+          "_history_stride": 4
+        },
+        "history_length": 5,
+        "flatten_history_dim": true,
+        "base_dim": 20,
+        "history_stride": 4
+      },
+      {
+        "name": "joint_vel",
+        "dim": 100,
+        "offset": 106,
+        "params": {
+          "_history_frames": 5,
+          "_history_stride": 4
+        },
+        "history_length": 5,
+        "flatten_history_dim": true,
+        "base_dim": 20,
+        "history_stride": 4
+      },
+      {
+        "name": "actions",
+        "dim": 100,
+        "offset": 206,
+        "params": {
+          "_history_frames": 5,
+          "_history_stride": 4
+        },
+        "history_length": 5,
+        "flatten_history_dim": true,
+        "base_dim": 20,
+        "history_stride": 4
+      },
+      {
+        "name": "velocity_commands",
+        "dim": 3,
+        "offset": 306,
+        "source_name": "command",
+        "params": {
+          "command_name": "twist"
+        }
+      },
+      {
+        "name": "joint_torque",
+        "dim": 100,
+        "offset": 309,
+        "source_name": "actuator_force",
+        "params": {
+          "_history_frames": 5,
+          "_history_stride": 4
+        },
+        "history_length": 5,
+        "flatten_history_dim": true,
+        "base_dim": 20,
+        "history_stride": 4
+      },
+      {
+        "name": "gait_phase",
+        "dim": 2,
+        "offset": 409,
+        "params": {
+          "command_name": "twist",
+          "stride": 0.08,
+          "freq_min": 2.0,
+          "freq_max": 7.5,
+          "turn_radius": 0.2,
+          "command_threshold": 0.05,
+          "advance": "after_frame"
+        }
+      },
+      {
+        "name": "posture_command",
+        "dim": 4,
+        "offset": 411,
+        "params": {
+          "command_name": "posture",
+          "neutral_height": 0.10647,
+          "mirror_kind": "posture4"
+        }
+      }
+    ]
+  },
+  "action": {
+    "dim": 20
+  },
+  "command_ranges": {
+    "twist": {
+      "lin_vel_x": [
+        -1.2,
+        1.2
+      ],
+      "lin_vel_y": [
+        -1.2,
+        1.2
+      ],
+      "ang_vel_z": [
+        -6.0,
+        6.0
+      ],
+      "heading": [
+        -3.141592653589793,
+        3.141592653589793
+      ]
+    },
+    "posture": {
+      "twist": [
+        -0.5235987755982988,
+        0.5235987755982988
+      ],
+      "pitch": [
+        -0.3490658503988659,
+        0.3490658503988659
+      ],
+      "roll": [
+        -0.2617993877991494,
+        0.2617993877991494
+      ],
+      "height": [
+        0.07,
+        0.15
+      ]
+    }
+  },
+  "controller": {
+    "schema": "operator_controller/2",
+    "source": {
+      "file": "controls.yaml",
+      "sha256": "000e6ff78165ba0328126707f38d673c04d4eb02edab4acc3fce436f66af2a3e",
+      "note": "Parsed from the specification play reads. Comments and provenance live in the source file."
+    },
+    "command": [
+      {
+        "term": "twist",
+        "feeds": "velocity_commands",
+        "frame": "body",
+        "axes": [
+          {
+            "name": "lin_vel_x",
+            "index": 0,
+            "unit": "m/s",
+            "positive": "forward",
+            "range_from": "command_ranges.twist.lin_vel_x"
+          },
+          {
+            "name": "lin_vel_y",
+            "index": 1,
+            "unit": "m/s",
+            "positive": "left",
+            "range_from": "command_ranges.twist.lin_vel_y"
+          },
+          {
+            "name": "ang_vel_z",
+            "index": 2,
+            "unit": "rad/s",
+            "positive": "counter-clockwise",
+            "range_from": "command_ranges.twist.ang_vel_z"
+          }
+        ],
+        "scaling": {
+          "rule": "full_deflection_is_range_edge",
+          "formula": "axis * (range_max if axis >= 0 else -range_min)",
+          "ends_scaled_separately": true
+        }
+      },
+      {
+        "term": "posture",
+        "feeds": "posture_command",
+        "frame": "twist over the feet; pitch and roll against gravity; height above the feet",
+        "axes": [
+          {
+            "name": "twist",
+            "index": 0,
+            "unit": "rad",
+            "positive": "counter-clockwise",
+            "range_from": "command_ranges.posture.twist"
+          },
+          {
+            "name": "pitch",
+            "index": 1,
+            "unit": "rad",
+            "positive": "nose down",
+            "range_from": "command_ranges.posture.pitch"
+          },
+          {
+            "name": "roll",
+            "index": 2,
+            "unit": "rad",
+            "positive": "left side up",
+            "range_from": "command_ranges.posture.roll"
+          },
+          {
+            "name": "height",
+            "index": 3,
+            "unit": "m",
+            "positive": "up",
+            "range_from": "command_ranges.posture.height",
+            "rest": 0.10647,
+            "rest_from": "neutral_height",
+            "integrate_s": 1.0
+          }
+        ],
+        "scaling": {
+          "rule": "full_deflection_is_range_edge",
+          "formula": "rest + axis * (range_max - rest if axis >= 0 else rest - range_min)",
+          "ends_scaled_separately": true
+        },
+        "bands": {
+          "standing_below": 0.06,
+          "velocity_term": "twist",
+          "moving": {
+            "twist": [
+              -0.2617993877991494,
+              0.2617993877991494
+            ],
+            "pitch": [
+              -0.2617993877991494,
+              0.2617993877991494
+            ],
+            "roll": [
+              -0.2617993877991494,
+              0.2617993877991494
+            ]
+          }
+        }
+      }
+    ],
+    "task": {},
+    "devices": {
+      "gamepad": {
+        "scheme": "absolute",
+        "layout": "xbox",
+        "axes": {
+          "lin_vel_x": {
+            "source": "Ly",
+            "sign": -1
+          },
+          "lin_vel_y": {
+            "source": "Lx",
+            "sign": -1
+          },
+          "twist": {
+            "source": "Rx",
+            "sign": -1,
+            "travel": [
+              0.0,
+              0.5,
+              0.5,
+              0.75
+            ]
+          },
+          "ang_vel_z": {
+            "source": "Rx",
+            "sign": -1,
+            "travel": [
+              0.5,
+              1.0
+            ]
+          },
+          "pitch": {
+            "source": "Ry",
+            "sign": -1
+          },
+          "roll": {
+            "source": "Rx",
+            "sign": 1,
+            "shifted": true
+          },
+          "height": {
+            "source": "Ry",
+            "sign": -1,
+            "shifted": true
+          }
+        },
+        "shift": {
+          "button": "R3",
+          "gesture": "hold"
+        },
+        "reset": "R3",
+        "deadzone": "device_reported_rescaled",
+        "release_button": "B"
+      },
+      "keyboard": {
+        "scheme": "keys",
+        "full_after_s": 2.0,
+        "axes": {
+          "lin_vel_x": {
+            "+": [
+              "key_w",
+              "key_up"
+            ],
+            "-": [
+              "key_s",
+              "key_down"
+            ]
+          },
+          "lin_vel_y": {
+            "+": [
+              "key_a",
+              "key_left"
+            ],
+            "-": [
+              "key_d",
+              "key_right"
+            ]
+          },
+          "ang_vel_z": {
+            "+": [
+              "key_j"
+            ],
+            "-": [
+              "key_l"
+            ]
+          },
+          "twist": {
+            "+": [
+              "key_h"
+            ],
+            "-": [
+              "key_semicolon"
+            ]
+          },
+          "pitch": {
+            "+": [
+              "key_i"
+            ],
+            "-": [
+              "key_k"
+            ]
+          },
+          "roll": {
+            "+": [
+              "key_o"
+            ],
+            "-": [
+              "key_u"
+            ]
+          },
+          "height": {
+            "+": [
+              "key_n"
+            ],
+            "-": [
+              "key_m"
+            ]
+          }
+        },
+        "release": [
+          "key_escape"
+        ]
+      }
+    }
+  },
+  "network": {
+    "actor_hidden_dims": [
+      512,
+      256,
+      128,
+      64
+    ],
+    "activation": "elu",
+    "obs_normalization": true
+  },
+  "deploy_notes": [
+    "Action transform: target = action * action_scale + default_joint_pos[joint], paired joint by joint in action_joint_order.",
+    "In simulation, apply_actions also subtracts encoder_bias (a domain randomisation term modelling encoder offset). Do not reproduce it on hardware.",
+    "Joints in unactuated_joints are not policy-controlled and must be locked at the given positions: they take part in collision, and freeing them changes the foot contact geometry.",
+    "The ONNX already contains observation normalisation; feed raw observations.",
+    "posture_command is 4 floats ordered [twist, pitch, roll, height - params.neutral_height]: the command term's own order, the height centred on standing. Not the builder's `base_pose`, which is three of the same quantities ordered [pitch, roll, twist]."
+  ]
+}

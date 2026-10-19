@@ -398,14 +398,15 @@ task:
   arm_thumb_up:   { kind: press,  does: "holds the carried arm straight out, thumb up, while held" }
   arm_thumb_down: { kind: press,  does: "holds the carried arm straight out, thumb down, while held" }
   arm_web_up:     { kind: press,  does: "holds the carried arm straight out, thumb-web up, while held" }
+  arm_to_face:    { kind: press,  does: "holds the carried arm bent in, the claw before the visor, while held" }
 
 devices:
   gamepad:
     task: { claw_left: LT, claw_right: RT, arm_thumb_up: dpad_up,
-            arm_thumb_down: dpad_down, arm_web_up: dpad_left }
+            arm_thumb_down: dpad_down, arm_web_up: dpad_left, arm_to_face: dpad_right }
   keyboard:
     task: { claw_left: [key_space], claw_right: [key_space], arm_thumb_up: [shift],
-            arm_thumb_down: [alt], arm_web_up: [ctrl] }
+            arm_thumb_down: [alt], arm_web_up: [ctrl], arm_to_face: [key_q] }
 ```
 
 An `amount` is 0 to 1, as far as it is held: on the pad an axis — a trigger's travel — and on
@@ -426,7 +427,8 @@ declaring controls no hook answers. In replay the task's own term answers what i
 back to its stow the moment nothing is — Control-agent 3.1's momentary switches, asked for on
 2026-09-29; until then a d-pad direction was read when it was let go and pressed again to stow,
 all a key through MuJoCo's viewer could deliver when the hook was written. Two held together are
-the pose between them; thumb up and thumb down together are neither. In the claw modes Shift
+the pose between them; thumb up and thumb down together are neither; `arm_to_face`, the one
+bent-in preset, does not blend -- held, it is the pose. In the claw modes Shift
 holds the arm out, and a modifier held for one thing cannot also modify a key for another, so
 the keyboard's twist is `unbound` there and the twist is the pad's alone.
 
@@ -592,7 +594,13 @@ is down), for switches.
 
 **A latch outlives nothing.** A recording that plays out releases its mode's latch and the
 cascade hands back (`jumper.jump`, 1.17 s after it starts); stale pad input releases them all
-(§3).
+(§3). A recording the cascade leaves *before* it plays out -- the tilt fallback, stale feedback
+-- is over the same way, and its latch goes with it. Until 2026-10-15 it did not: a dash that
+tipped the robot stayed latched through `safe`, and the moment the robot was level again the
+cascade entered the dash from the start, with nobody pressing anything (a crab battle's second
+round opened with one crab dashing off its mark). On the robot that is a fall, a person standing
+it back up, and the move it fell on playing again. A gait left the same way keeps its latch:
+`carry` is a held LB, and letting go of a dead-man switch is the operator's to do.
 
 ### 5.4 The keyboard for switches
 

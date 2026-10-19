@@ -69,3 +69,6 @@ MUJOCO_LOG.TXT
 # in .env.local, which takes precedence and is not committed.
 .env.local
 .claude/launch.json
+
+# A 3D model at the root is source material, converted once (tools/fetch/convert_mug.py).
+/*.glb

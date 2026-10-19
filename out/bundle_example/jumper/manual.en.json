@@ -181,6 +181,11 @@
           "control": "dpad_left",
           "pad": "D-pad left",
           "does": "holds the carried arm straight out, thumb-web up, while held"
+        },
+        {
+          "control": "dpad_right",
+          "pad": "D-pad right",
+          "does": "holds the carried arm bent in, the claw before the visor, while held"
         }
       ],
       "keys": [
@@ -235,6 +240,10 @@
         {
           "key": "O",
           "does": "roll, right side down"
+        },
+        {
+          "key": "Q",
+          "does": "holds the carried arm bent in, the claw before the visor, while held"
         },
         {
           "key": "→",
@@ -328,6 +337,11 @@
           "control": "dpad_left",
           "pad": "D-pad left",
           "does": "holds the carried arm straight out, thumb-web up, while held"
+        },
+        {
+          "control": "dpad_right",
+          "pad": "D-pad right",
+          "does": "holds the carried arm bent in, the claw before the visor, while held"
         }
       ],
       "keys": [
@@ -382,6 +396,10 @@
         {
           "key": "O",
           "does": "roll, right side down"
+        },
+        {
+          "key": "Q",
+          "does": "holds the carried arm bent in, the claw before the visor, while held"
         },
         {
           "key": "→",
@@ -462,6 +480,17 @@
       "keys": []
     },
     {
+      "mode": "dash",
+      "task": "jumper.dash",
+      "default": false,
+      "summary": "A recorded motion, 1.5 s long, that starts the moment this mode is entered.",
+      "enter": "left stick click (L3) or keyboard: Num 5",
+      "leave": "Hands back to locomotion by itself when the motion ends; the switch pressed again stops it early.",
+      "keyboard": "This mode reads no sticks, triggers or keys.",
+      "controls": [],
+      "keys": []
+    },
+    {
       "mode": "gesture_bow",
       "task": "jumper.gesture_bow",
       "default": false,
@@ -495,11 +524,66 @@
       "keys": []
     },
     {
+      "mode": "gesture_pump",
+      "task": "jumper.gesture_pump",
+      "default": false,
+      "summary": "A recorded motion, 10.5 s long, that starts the moment this mode is entered.",
+      "enter": "hold Menu, then Y or keyboard: Num 8",
+      "leave": "Hands back to locomotion by itself when the motion ends; the switch pressed again stops it early. Menu, pressed and let go on its own or keyboard: Ctrl, pressed and let go on its own interrupts it and goes back to locomotion.",
+      "keyboard": "This mode reads no sticks, triggers or keys.",
+      "controls": [],
+      "keys": []
+    },
+    {
       "mode": "gesture_salute",
       "task": "jumper.gesture_salute",
       "default": false,
       "summary": "A recorded motion, 6.0 s long, that starts the moment this mode is entered.",
       "enter": "D-pad right or keyboard: 4 or keyboard: Num 4",
+      "leave": "Hands back to locomotion by itself when the motion ends; the switch pressed again stops it early. Menu, pressed and let go on its own or keyboard: Ctrl, pressed and let go on its own interrupts it and goes back to locomotion.",
+      "keyboard": "This mode reads no sticks, triggers or keys.",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_sleep",
+      "task": "jumper.gesture_sleep",
+      "default": false,
+      "summary": "A recorded motion, 18.8 s long, that starts the moment this mode is entered.",
+      "enter": "Y or keyboard: Q",
+      "leave": "Hands back to locomotion by itself when the motion ends; the switch pressed again stops it early. Menu, pressed and let go on its own or keyboard: Ctrl, pressed and let go on its own interrupts it and goes back to locomotion.",
+      "keyboard": "This mode reads no sticks, triggers or keys.",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_threat",
+      "task": "jumper.gesture_threat",
+      "default": false,
+      "summary": "A recorded motion, 9.7 s long, that starts the moment this mode is entered.",
+      "enter": "hold Menu, then X or keyboard: Num 7",
+      "leave": "Hands back to locomotion by itself when the motion ends; the switch pressed again stops it early. Menu, pressed and let go on its own or keyboard: Ctrl, pressed and let go on its own interrupts it and goes back to locomotion.",
+      "keyboard": "This mode reads no sticks, triggers or keys.",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_wave",
+      "task": "jumper.gesture_wave",
+      "default": false,
+      "summary": "A recorded motion, 10.9 s long, that starts the moment this mode is entered.",
+      "enter": "hold Menu, then A or keyboard: Num 9",
+      "leave": "Hands back to locomotion by itself when the motion ends; the switch pressed again stops it early. Menu, pressed and let go on its own or keyboard: Ctrl, pressed and let go on its own interrupts it and goes back to locomotion.",
+      "keyboard": "This mode reads no sticks, triggers or keys.",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_zoidberg",
+      "task": "jumper.gesture_zoidberg",
+      "default": false,
+      "summary": "A recorded motion, 10.5 s long, that starts the moment this mode is entered.",
+      "enter": "X or keyboard: G",
       "leave": "Hands back to locomotion by itself when the motion ends; the switch pressed again stops it early. Menu, pressed and let go on its own or keyboard: Ctrl, pressed and let go on its own interrupts it and goes back to locomotion.",
       "keyboard": "This mode reads no sticks, triggers or keys.",
       "controls": [],
@@ -515,9 +599,141 @@
       "keyboard": "This mode reads no sticks, triggers or keys.",
       "controls": [],
       "keys": []
+    },
+    {
+      "mode": "sprint",
+      "task": "jumper.sprint",
+      "default": false,
+      "summary": "A mode of its own, with its own controls.",
+      "enter": "hold Menu, then left bumper (LB) or keyboard: Num 6",
+      "leave": "Press its switch again to go back to locomotion.",
+      "keyboard": "A key held pushes what it drives further the longer it is held -- fully after 2 s -- and lets it back the moment it comes up, the height included: the keys place what the stick moves.",
+      "controls": [
+        {
+          "control": "Ly",
+          "pad": "left stick, up and down",
+          "does": "up: walk forward; down: walk back"
+        },
+        {
+          "control": "Lx",
+          "pad": "left stick, left and right",
+          "does": "left: step left; right: step right"
+        },
+        {
+          "control": "Ry",
+          "pad": "right stick, up and down",
+          "does": "up: nose down; down: nose up; with right stick click (R3) held -- up: stand taller (moves it; let go, it stays); down: crouch lower (moves it; let go, it stays)"
+        },
+        {
+          "control": "Rx",
+          "pad": "right stick, left and right",
+          "does": "left: twist left, then turn left; right: twist right, then turn right; with right stick click (R3) held -- left: roll, left side down; right: roll, right side down"
+        },
+        {
+          "control": "R3",
+          "pad": "right stick click (R3)",
+          "does": "hold for the other stick layer; tapped -- pressed and let go without the stick moving -- puts the moved axes back at rest"
+        },
+        {
+          "control": "B",
+          "pad": "B",
+          "does": "let go of everything: every control back to rest"
+        }
+      ],
+      "keys": [
+        {
+          "key": "A",
+          "does": "step left"
+        },
+        {
+          "key": "D",
+          "does": "step right"
+        },
+        {
+          "key": "↓",
+          "does": "walk back"
+        },
+        {
+          "key": "Esc",
+          "does": "let go of everything: every control back to rest"
+        },
+        {
+          "key": "H",
+          "does": "twist left"
+        },
+        {
+          "key": "I",
+          "does": "nose down"
+        },
+        {
+          "key": "J",
+          "does": "turn left"
+        },
+        {
+          "key": "K",
+          "does": "nose up"
+        },
+        {
+          "key": "L",
+          "does": "turn right"
+        },
+        {
+          "key": "←",
+          "does": "step left"
+        },
+        {
+          "key": "M",
+          "does": "crouch lower"
+        },
+        {
+          "key": "N",
+          "does": "stand taller"
+        },
+        {
+          "key": "O",
+          "does": "roll, right side down"
+        },
+        {
+          "key": "→",
+          "does": "step right"
+        },
+        {
+          "key": "S",
+          "does": "walk back"
+        },
+        {
+          "key": ";",
+          "does": "twist right"
+        },
+        {
+          "key": "U",
+          "does": "roll, left side down"
+        },
+        {
+          "key": "↑",
+          "does": "walk forward"
+        },
+        {
+          "key": "W",
+          "does": "walk forward"
+        }
+      ]
     }
   ],
   "switches": [
+    {
+      "device": "pad",
+      "control": "A",
+      "with": "menu",
+      "keys": [],
+      "pad": "hold Menu, then A",
+      "does": "switch to gesture_wave; press again to switch back (from locomotion, claw_left, claw_right only)",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
     {
       "device": "pad",
       "control": "A",
@@ -531,6 +747,58 @@
     },
     {
       "device": "pad",
+      "control": "X",
+      "with": "menu",
+      "keys": [],
+      "pad": "hold Menu, then X",
+      "does": "switch to gesture_threat; press again to switch back (from locomotion, claw_left, claw_right only)",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "X",
+      "with": null,
+      "keys": [],
+      "pad": "X",
+      "does": "switch to gesture_zoidberg; press again to switch back (from locomotion, claw_left, claw_right only)",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "Y",
+      "with": "menu",
+      "keys": [],
+      "pad": "hold Menu, then Y",
+      "does": "switch to gesture_pump; press again to switch back (from locomotion, claw_left, claw_right only)",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "Y",
+      "with": null,
+      "keys": [],
+      "pad": "Y",
+      "does": "switch to gesture_sleep; press again to switch back (from locomotion, claw_left, claw_right only)",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
       "control": "LB",
       "with": null,
       "keys": [],
@@ -539,6 +807,17 @@
       "from": [
         "locomotion",
         "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "LB",
+      "with": "menu",
+      "keys": [],
+      "pad": "hold Menu, then left bumper (LB)",
+      "does": "switch to sprint; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
       ]
     },
     {
@@ -559,7 +838,7 @@
       "with": null,
       "keys": [],
       "pad": "Menu, pressed and let go on its own",
-      "does": "leave dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute -- whichever is on -- back to locomotion (from dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute only)",
+      "does": "leave dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute, gesture_zoidberg, gesture_sleep, gesture_threat, gesture_pump, gesture_wave -- whichever is on -- back to locomotion (from dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute, gesture_zoidberg, gesture_sleep, gesture_threat, gesture_pump, gesture_wave only)",
       "from": [
         "dance_crab",
         "dance_brazilian",
@@ -568,7 +847,23 @@
         "gesture_hello",
         "gesture_bow",
         "gesture_paw",
-        "gesture_salute"
+        "gesture_salute",
+        "gesture_zoidberg",
+        "gesture_sleep",
+        "gesture_threat",
+        "gesture_pump",
+        "gesture_wave"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "L3",
+      "with": null,
+      "keys": [],
+      "pad": "left stick click (L3)",
+      "does": "switch to dash; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
       ]
     },
     {
@@ -707,7 +1002,7 @@
         "Ctrl"
       ],
       "pad": null,
-      "does": "leave dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute -- whichever is on -- back to locomotion (from dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute only)",
+      "does": "leave dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute, gesture_zoidberg, gesture_sleep, gesture_threat, gesture_pump, gesture_wave -- whichever is on -- back to locomotion (from dance_crab, dance_brazilian, dance_maze, dance_dream_wings, gesture_hello, gesture_bow, gesture_paw, gesture_salute, gesture_zoidberg, gesture_sleep, gesture_threat, gesture_pump, gesture_wave only)",
       "from": [
         "dance_crab",
         "dance_brazilian",
@@ -716,7 +1011,12 @@
         "gesture_hello",
         "gesture_bow",
         "gesture_paw",
-        "gesture_salute"
+        "gesture_salute",
+        "gesture_zoidberg",
+        "gesture_sleep",
+        "gesture_threat",
+        "gesture_pump",
+        "gesture_wave"
       ]
     },
     {
@@ -955,6 +1255,32 @@
     },
     {
       "device": "keyboard",
+      "control": "key_g",
+      "with": null,
+      "keys": [
+        "G"
+      ],
+      "pad": null,
+      "does": "switch to gesture_zoidberg; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "key_q",
+      "with": null,
+      "keys": [
+        "Q"
+      ],
+      "pad": null,
+      "does": "switch to gesture_sleep; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
       "control": "key_space",
       "with": null,
       "keys": [
@@ -1028,6 +1354,71 @@
       ],
       "pad": null,
       "does": "switch to gesture_salute; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_5",
+      "with": null,
+      "keys": [
+        "Num 5"
+      ],
+      "pad": null,
+      "does": "switch to dash; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_6",
+      "with": null,
+      "keys": [
+        "Num 6"
+      ],
+      "pad": null,
+      "does": "switch to sprint; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_7",
+      "with": null,
+      "keys": [
+        "Num 7"
+      ],
+      "pad": null,
+      "does": "switch to gesture_threat; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_8",
+      "with": null,
+      "keys": [
+        "Num 8"
+      ],
+      "pad": null,
+      "does": "switch to gesture_pump; press again to switch back (from locomotion only)",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_9",
+      "with": null,
+      "keys": [
+        "Num 9"
+      ],
+      "pad": null,
+      "does": "switch to gesture_wave; press again to switch back (from locomotion only)",
       "from": [
         "locomotion"
       ]

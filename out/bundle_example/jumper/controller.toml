@@ -119,6 +119,10 @@ enter = "@initial"
 when = "button:jump"
 enter = "jump"
 
+[[fsm.rule]]
+when = "button:dash"
+enter = "dash"
+
 # Same place in the order and for the same reason: the operator can ask for a
 # dance, and cannot ask for one while the robot is tilted or blind. Each of
 # these releases itself when its recording ends -- see
@@ -158,6 +162,34 @@ enter = "gesture_paw"
 when = "button:gesture_salute"
 enter = "gesture_salute"
 
+# The Zoidberg (tools/fetch/make_zoidberg.py, 2026-10-13): a gesture of this
+# repository's own, on X, reachable from the claw modes too so the fetch's
+# excitement needs no detour through the walk.
+[[fsm.rule]]
+when = "button:gesture_zoidberg"
+enter = "gesture_zoidberg"
+
+# The sleep (tools/fetch/make_sleep.py, 2026-10-13): the same kind of gesture, on Y.
+[[fsm.rule]]
+when = "button:gesture_sleep"
+enter = "gesture_sleep"
+
+# The crab battle's gestures (tools/battle/make_threat.py, make_pump.py,
+# make_wave.py, 2026-10-14): the threat display, the claw pump and the wave,
+# on Menu chords with X, Y and A, the same kind of gesture as the Zoidberg.
+[[fsm.rule]]
+when = "button:gesture_threat"
+enter = "gesture_threat"
+
+[[fsm.rule]]
+when = "button:gesture_pump"
+enter = "gesture_pump"
+
+[[fsm.rule]]
+when = "button:gesture_wave"
+enter = "gesture_wave"
+
+
 # The claw, carried on either side: one jumper.five_foot export, two modes, the
 # side in each one's hook. Below the recordings, and that is not only habit:
 # the pad's Menu + d-pad chords reach a dance from a claw mode, whose own
@@ -176,6 +208,10 @@ enter = "claw_right"
 when = "button:claw_left"
 enter = "claw_left"
 
+[[fsm.rule]]
+when = "button:sprint"
+enter = "sprint"
+
 # The last rule must be `always`: a cascade that can fall through the bottom has
 # no defined behaviour, and the crate refuses to load one that does.
 [[fsm.rule]]
@@ -186,15 +222,15 @@ enter = "locomotion"
 name = "leave_motion"
 pad = "menu"
 on = "fall"
-from = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]
-leaves = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]
+from = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute", "gesture_zoidberg", "gesture_sleep", "gesture_threat", "gesture_pump", "gesture_wave"]
+leaves = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute", "gesture_zoidberg", "gesture_sleep", "gesture_threat", "gesture_pump", "gesture_wave"]
 
 [[fsm.button]]
 name = "leave_motion"
 key = "ctrl"
 on = "fall"
-from = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]
-leaves = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]
+from = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute", "gesture_zoidberg", "gesture_sleep", "gesture_threat", "gesture_pump", "gesture_wave"]
+leaves = ["dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute", "gesture_zoidberg", "gesture_sleep", "gesture_threat", "gesture_pump", "gesture_wave"]
 
 [[fsm.button]]
 name = "claw_left"
@@ -305,6 +341,18 @@ with = "ctrl"
 from = ["locomotion", "dance_crab", "dance_brazilian", "dance_maze", "dance_dream_wings", "gesture_hello", "gesture_bow", "gesture_paw", "gesture_salute"]
 
 [[fsm.button]]
+name = "dash"
+pad = "L3"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
+name = "dash"
+key = "keypad_5"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
 name = "gesture_bow"
 pad = "dpad_down"
 on = "toggle"
@@ -359,6 +407,19 @@ on = "toggle"
 from = ["locomotion"]
 
 [[fsm.button]]
+name = "gesture_pump"
+pad = "Y"
+on = "toggle"
+with = "menu"
+from = ["locomotion", "claw_left", "claw_right"]
+
+[[fsm.button]]
+name = "gesture_pump"
+key = "keypad_8"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
 name = "gesture_salute"
 pad = "dpad_right"
 on = "toggle"
@@ -377,6 +438,56 @@ on = "toggle"
 from = ["locomotion"]
 
 [[fsm.button]]
+name = "gesture_sleep"
+pad = "Y"
+on = "toggle"
+from = ["locomotion", "claw_left", "claw_right"]
+
+[[fsm.button]]
+name = "gesture_sleep"
+key = "key_q"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
+name = "gesture_threat"
+pad = "X"
+on = "toggle"
+with = "menu"
+from = ["locomotion", "claw_left", "claw_right"]
+
+[[fsm.button]]
+name = "gesture_threat"
+key = "keypad_7"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
+name = "gesture_wave"
+pad = "A"
+on = "toggle"
+with = "menu"
+from = ["locomotion", "claw_left", "claw_right"]
+
+[[fsm.button]]
+name = "gesture_wave"
+key = "keypad_9"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
+name = "gesture_zoidberg"
+pad = "X"
+on = "toggle"
+from = ["locomotion", "claw_left", "claw_right"]
+
+[[fsm.button]]
+name = "gesture_zoidberg"
+key = "key_g"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
 name = "jump"
 pad = "A"
 on = "toggle"
@@ -385,6 +496,19 @@ from = ["locomotion"]
 [[fsm.button]]
 name = "jump"
 key = "key_space"
+on = "toggle"
+from = ["locomotion"]
+
+[[fsm.button]]
+name = "sprint"
+pad = "LB"
+on = "toggle"
+with = "menu"
+from = ["locomotion"]
+
+[[fsm.button]]
+name = "sprint"
+key = "keypad_6"
 on = "toggle"
 from = ["locomotion"]
 
@@ -421,6 +545,11 @@ model = "dance_maze.onnx"
 task = "jumper.dance_maze"
 
 [[fsm.state]]
+name = "dash"
+model = "dash.onnx"
+task = "jumper.dash"
+
+[[fsm.state]]
 name = "gesture_bow"
 model = "gesture_bow.onnx"
 task = "jumper.gesture_bow"
@@ -436,9 +565,34 @@ model = "gesture_paw.onnx"
 task = "jumper.gesture_paw"
 
 [[fsm.state]]
+name = "gesture_pump"
+model = "gesture_pump.onnx"
+task = "jumper.gesture_pump"
+
+[[fsm.state]]
 name = "gesture_salute"
 model = "gesture_salute.onnx"
 task = "jumper.gesture_salute"
+
+[[fsm.state]]
+name = "gesture_sleep"
+model = "gesture_sleep.onnx"
+task = "jumper.gesture_sleep"
+
+[[fsm.state]]
+name = "gesture_threat"
+model = "gesture_threat.onnx"
+task = "jumper.gesture_threat"
+
+[[fsm.state]]
+name = "gesture_wave"
+model = "gesture_wave.onnx"
+task = "jumper.gesture_wave"
+
+[[fsm.state]]
+name = "gesture_zoidberg"
+model = "gesture_zoidberg.onnx"
+task = "jumper.gesture_zoidberg"
 
 [[fsm.state]]
 name = "jump"
@@ -449,3 +603,8 @@ task = "jumper.jump"
 name = "locomotion"
 model = "locomotion.onnx"
 task = "jumper.posture"
+
+[[fsm.state]]
+name = "sprint"
+model = "sprint.onnx"
+task = "jumper.sprint"

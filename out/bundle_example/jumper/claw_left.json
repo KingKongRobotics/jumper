@@ -1,8 +1,8 @@
 {
   "_source": "scripts/export.py -- re-export whenever the env / robot / agent config changes",
   "_checkpoint": {
-    "path": "logs/jumper/jumper.five_foot/2026-09-28_08-38-48/model_86600.pt",
-    "run": "logs/jumper/jumper.five_foot/2026-09-28_08-38-48",
+    "path": "tasks/jumper/five_foot/out/example/model_86600.pt",
+    "run": "tasks/jumper/five_foot/out/example",
     "iteration": "model_86600"
   },
   "_schema": "isaac_layout v1",
@@ -325,7 +325,7 @@
     "schema": "operator_controller/2",
     "source": {
       "file": "controls.yaml",
-      "sha256": "0292a69af9cef6570175d47c5935c0e82890f38dbe4921ada3ba463621f93ce6",
+      "sha256": "73030808fbcea564fc5b745f3174f947e1ef6739bcc68c24361f7e0468cf9f31",
       "note": "Parsed from the specification play reads. Comments and provenance live in the source file."
     },
     "command": [
@@ -435,6 +435,10 @@
       "arm_web_up": {
         "kind": "press",
         "does": "holds the carried arm straight out, thumb-web up, while held"
+      },
+      "arm_to_face": {
+        "kind": "press",
+        "does": "holds the carried arm bent in, the claw before the visor, while held"
       }
     },
     "devices": {
@@ -489,7 +493,8 @@
           "claw_right": "RT",
           "arm_thumb_up": "dpad_up",
           "arm_thumb_down": "dpad_down",
-          "arm_web_up": "dpad_left"
+          "arm_web_up": "dpad_left",
+          "arm_to_face": "dpad_right"
         }
       },
       "keyboard": {
@@ -567,6 +572,9 @@
           ],
           "arm_web_up": [
             "ctrl"
+          ],
+          "arm_to_face": [
+            "key_q"
           ]
         }
       }

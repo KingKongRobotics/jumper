@@ -144,6 +144,12 @@ task:
   arm_web_up:
     kind: press
     does: holds the carried arm straight out, thumb-web up, while held
+  # Not one of V3.1's: the arm bent in, the claw before the visor, for bringing
+  # what it carries to where a mouth would be. It does not blend with the three
+  # above -- held, it is the pose (`deploy/lib.rs`).
+  arm_to_face:
+    kind: press
+    does: holds the carried arm bent in, the claw before the visor, while held
 
 devices:
   gamepad:
@@ -197,8 +203,8 @@ devices:
     # side, squeezed as far as it closes, and the arm's presets on the d-pad, a
     # direction held for as long as the arm is to be out -- a `press` goes on a
     # d-pad direction, because the ten buttons are the bundle's mode switches and
-    # the release. Right is not the task's since 2026-09-29, when the diagonals
-    # it made with up went: in a claw mode it does nothing on its own. A
+    # the release. Right was not the task's from 2026-09-29, when the diagonals
+    # it made with up went, until `arm_to_face` took it (2026-10-12). A
     # direction pressed with `menu` held is the bundle's, not this
     # (`deploy/manifests.json`).
     task:
@@ -207,6 +213,7 @@ devices:
       arm_thumb_up: dpad_up
       arm_thumb_down: dpad_down
       arm_web_up: dpad_left
+      arm_to_face: dpad_right
 
   keyboard:
     # Keystrokes bound to what they do: each pushes one direction of one axis,
@@ -247,3 +254,5 @@ devices:
       arm_thumb_up: [shift]
       arm_thumb_down: [alt]
       arm_web_up: [ctrl]
+      # The d-pad's right: Q, which the dictionary says nothing else binds.
+      arm_to_face: [key_q]

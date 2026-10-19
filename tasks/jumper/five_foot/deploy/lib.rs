@@ -85,8 +85,9 @@
 //! The arm stows -- the contract's home pose, `claw.py::LF_GRASP` -- and three
 //! controls hold it out straight, one way each, for as long as they are held:
 //! `arm_thumb_up`, `arm_thumb_down` and `arm_web_up`, the d-pad's up, down and
-//! left on the pad and Shift, Alt and Ctrl on the keyboard. Let go, it goes back
-//! to the stow. That is Control-agent 3.1's layout, asked for on 2026-09-29
+//! left on the pad and Shift, Alt and Ctrl on the keyboard; a fourth,
+//! `arm_to_face` (d-pad right, Q), bends it in instead, the claw before the
+//! visor. Let go, it goes back to the stow. That is Control-agent 3.1's layout, asked for on 2026-09-29
 //! ("开关量 ... 松开后回位"); until then a direction was a press, read when it
 //! was let go, pressed again to stow -- all a key through MuJoCo's viewer could
 //! deliver when it was written. The presets, the gains, the interpolation and
@@ -101,6 +102,7 @@
 //!     arm_thumb_up     straight out, the thumb up       [-90, -180,   0,  -1]
 //!     arm_thumb_down   straight out, the thumb down     [-90,  -30,  30,  -1]
 //!     arm_web_up       straight out, the thumb-web up   [-90,  -90,   0,  -1]
+//!     arm_to_face      folded in, the claw before the visor [-22.8, -90.0, -28.7, -84.7]
 //! ```
 //!
 //! Thumb up and down are 3.0's right and left moved, and the web is 3.0's up
@@ -110,6 +112,21 @@
 //! together are neither, as the d-pad's two ends cannot both be down: a keyboard
 //! can hold Shift and Alt at once. V3.1's diagonals -- up and a side, the arm
 //! swung 45 degrees out towards it -- are gone with the press they were chosen on.
+//! `arm_to_face` is not one of V3.1's and does not blend: held, it is the pose,
+//! whatever else is held with it. It is for a thing carried in the claw -- a mug
+//! by its handle -- brought to where a mouth would be, so what it must clear is
+//! the load as much as the arm; a mean of it and a straight-out pose would sweep
+//! that load through the trunk. Its shoulder pitch is the web's, exactly, so the
+//! hand keeps the web's orientation and the load hangs as it hung: the shoulder
+//! yaw swings the arm in and the elbow and wrist fold it, in the plane the web
+//! holds them in. Measured 2026-10-12 (`grasp_pose.py`'s `Claw` at 1500 points a
+//! body, the trunk level, a 40 mm cup 100 mm tall hanging plumb 86 mm off the
+//! pinch): the pinch point at (0.206, 0.040, -0.025) m of the base, the cup's
+//! centre at (0.271, -0.017, -0.025) -- on the centreline, as near as the
+//! fold reaches -- the cup 34 mm from trunk and legs and 141 from the visor, the
+//! forearm and claw 26 mm from them, the arm 62 mm above the floor; along the
+//! straight joint-space path from `web_up` the cup never comes under 34 mm, the
+//! arm under 14, the floor under 62.
 //!
 //! The dances are the pad's `menu` and a direction. That chord enters the dance
 //! on the press, the claw mode stops ticking, and the direction never reaches
@@ -222,17 +239,20 @@ const FINGER_POSED_DEG: f32 = 90.0;
 /// order the presets are written in.
 const ARM: [&str; 4] = ["LF_J0_joint", "LF_J1_joint", "LF_J2_joint", "LF_J3_joint"];
 
-/// The three task controls that hold the arm out, by `controls.yaml`'s names:
-/// thumb up, thumb down, thumb-web up -- the order `PRESETS` lists them in.
-const ARM_CONTROLS: [&str; 3] = ["arm_thumb_up", "arm_thumb_down", "arm_web_up"];
+/// The four task controls that hold the arm at a preset, by `controls.yaml`'s
+/// names: thumb up, thumb down, thumb-web up, to the face -- the order `PRESETS`
+/// lists them in.
+const ARM_CONTROLS: [&str; 4] = ["arm_thumb_up", "arm_thumb_down", "arm_web_up", "arm_to_face"];
 
 /// rl-wbc-fsm's `config/hexa/rl-wbc-fsm.toml`, `[arm.left]` (V3.1), in degrees,
 /// in `ARM_CONTROLS`' order: straight out with the thumb up, the thumb down, the
-/// thumb-web up.
-const PRESETS: [[f32; 4]; 3] = [
+/// thumb-web up -- and the fourth, this crate's own: bent in, the pinch point
+/// about 5 cm before the visor and a little under it (see the module doc).
+const PRESETS: [[f32; 4]; 4] = [
     [-90.0, -180.0, 0.0, -1.0],
     [-90.0, -30.0, 30.0, -1.0],
     [-90.0, -90.0, 0.0, -1.0],
+    [-22.8, -90.0, -28.7, -84.7],
 ];
 
 /// The arm's gains whenever this library holds it, and how far the setpoint
@@ -241,6 +261,14 @@ const PRESETS: [[f32; 4]; 3] = [
 const ARM_KP: f32 = 3.0;
 const ARM_KD: f32 = 0.3;
 const ARM_INTERP: f32 = 0.30;
+/// The fraction per decode while `arm_to_face` is held, and until the arm has
+/// settled after it is let go: a fifth of the presets' rate, a time constant of
+/// a third of a second instead of a fifteenth. The straight-out presets swap
+/// with nothing in the claw; the bend in is made with a mug hanging on the
+/// pinch's friction, and at `ARM_INTERP` the swing flung it off the bar in two
+/// of three runs (`tools/fetch`, 2026-10-12: the mug on the sand 0.5 s into the
+/// bend); at this rate it stayed in every one.
+const FACE_INTERP: f32 = 0.06;
 
 /// The operator's pitch carried onto the arm at the stow, in rad of shoulder
 /// per unit of stick: `[arm]`'s `shoulder_pitch_follow_up` and
@@ -396,6 +424,10 @@ struct Arm {
     /// The pose held out to while its controls are held, in rad; `None` is the
     /// stow.
     preset: Option<[f32; 4]>,
+    /// `arm_to_face` is held, or was and the arm has not settled since: the
+    /// setpoint moves at `FACE_INTERP`.
+    slow: bool,
+    face_held: bool,
     /// The operator's pitch as a stick, `-1..1`, nose down positive, as of the
     /// latest observation.
     pitch: f32,
@@ -425,6 +457,8 @@ impl Arm {
             joints,
             home,
             preset: None,
+            slow: false,
+            face_held: false,
             pitch: 0.0,
             shoulder_follow: (SHOULDER_FOLLOW_NOSE_DOWN, SHOULDER_FOLLOW_NOSE_UP),
             driving: false,
@@ -438,17 +472,26 @@ impl Arm {
 
     /// The arm controls held, in `ARM_CONTROLS`' order, and the arm the policy
     /// is about to be shown.
-    fn observe(&mut self, state: &mut RobotState, held: [bool; 3]) {
+    fn observe(&mut self, state: &mut RobotState, held: [bool; 4]) {
         self.measured = self.joints.map(|w| state.q[w]);
         self.preset = Self::pose(held);
+        self.face_held = held[3];
+        if self.face_held {
+            self.slow = true;
+        }
         self.show(state);
     }
 
     /// Where the held controls put the arm, in rad: one held is its preset, two
     /// the mean of theirs, none the stow. Thumb up and thumb down cancel -- the
     /// two ends of the d-pad's one rocker cannot both be down, and on the
-    /// keyboard, where they can, neither of the two is what was meant.
-    fn pose([up, down, web]: [bool; 3]) -> Option<[f32; 4]> {
+    /// keyboard, where they can, neither of the two is what was meant. To the
+    /// face held is that pose outright, whatever else is held: a mean of it and
+    /// a straight-out pose sweeps the carried load through the trunk.
+    fn pose([up, down, web, face]: [bool; 4]) -> Option<[f32; 4]> {
+        if face {
+            return Some(PRESETS[3].map(f32::to_radians));
+        }
         let vertical = match (up, down) {
             (true, false) => Some(PRESETS[0]),
             (false, true) => Some(PRESETS[1]),
@@ -516,11 +559,18 @@ impl Arm {
             None if self.driving => self.home,
             None => return,
         };
+        let rate = if self.slow { FACE_INTERP } else { ARM_INTERP };
         for (k, &w) in self.joints.iter().enumerate() {
-            self.setpoint[k] += (target[k] - self.setpoint[k]) * ARM_INTERP;
+            self.setpoint[k] += (target[k] - self.setpoint[k]) * rate;
             motor.pos[w] = self.setpoint[k];
             motor.kp[w] = ARM_KP;
             motor.kd[w] = ARM_KD;
+        }
+        if self.slow && !self.face_held {
+            let settled = self.setpoint.iter().zip(&target).all(|(s, t)| (s - t).abs() <= 0.02);
+            if settled {
+                self.slow = false;
+            }
         }
         let home = self.setpoint.iter().zip(&self.home).all(|(s, h)| (s - h).abs() <= RETURN_TOL);
         if self.target().is_none() && home {
@@ -850,7 +900,8 @@ mod tests {
     /// Long enough, with `controls` held, for the setpoint to be where it is
     /// going: 0.7^60 of the way is left. Returns the tick after.
     fn settle_with(hook: &mut dyn ModeHook, controls: &[(&str, f32)], pitch: f32) -> MotorCommand {
-        for _ in 0..60 {
+        // 300 decodes: `arm_to_face` moves at FACE_INTERP, and 60 leaves it 2% short.
+        for _ in 0..300 {
             run(hook, In { controls, pitch, ..Default::default() });
         }
         run(hook, In { controls, pitch, ..Default::default() }).1
@@ -884,6 +935,7 @@ mod tests {
     const UP: (&str, f32) = ("arm_thumb_up", 1.0);
     const DOWN: (&str, f32) = ("arm_thumb_down", 1.0);
     const WEB: (&str, f32) = ("arm_web_up", 1.0);
+    const FACE: (&str, f32) = ("arm_to_face", 1.0);
 
     /// A stow that is not zero and not symmetric -- `LF_GRASP`, near enough --
     /// so that a hook seeding from it, or holding zero, is told apart from one
@@ -918,7 +970,7 @@ mod tests {
     #[test]
     fn the_claw_control_at_its_side_is_the_claws_travel() {
         let mut left = hook("left");
-        assert_eq!(left.reads(), ["claw_left", "arm_thumb_up", "arm_thumb_down", "arm_web_up"]);
+        assert_eq!(left.reads(), ["claw_left", "arm_thumb_up", "arm_thumb_down", "arm_web_up", "arm_to_face"]);
         let shut = [("LF_J4_joint", GRIPPER_CLOSED)];
         let half = 0.5 * (released() + GRIPPER_CLOSED);
         for (lt, want) in [(0.0, released()), (0.5, half), (1.0, GRIPPER_CLOSED), (1.7, GRIPPER_CLOSED)] {
@@ -951,7 +1003,7 @@ mod tests {
     #[test]
     fn on_the_right_claw_right_closes_the_right_claw() {
         let mut right = hook("right");
-        assert_eq!(right.reads(), ["claw_right", "arm_thumb_up", "arm_thumb_down", "arm_web_up"]);
+        assert_eq!(right.reads(), ["claw_right", "arm_thumb_up", "arm_thumb_down", "arm_web_up", "arm_to_face"]);
         // The robot's right finger at +0.2 is the policy's left one at -0.2.
         let finger = [("RF_J4_joint", 0.2)];
         let pos = tick(right.as_mut(), &finger, &[("claw_right", 1.0)]).pos;
@@ -1029,7 +1081,7 @@ mod tests {
     /// preset alone is the control group for the blends.
     #[test]
     fn two_presets_held_are_the_pose_between_them() {
-        let cases: [(&[(&str, f32)], [f32; 4]); 7] = [
+        let cases: [(&[(&str, f32)], [f32; 4]); 10] = [
             (&[UP], preset("arm_thumb_up")),
             (&[DOWN], preset("arm_thumb_down")),
             (&[WEB], preset("arm_web_up")),
@@ -1037,6 +1089,10 @@ mod tests {
             (&[DOWN, WEB], between("arm_thumb_down", "arm_web_up")),
             (&[UP, DOWN], STOW),
             (&[UP, DOWN, WEB], preset("arm_web_up")),
+            // To the face does not blend: held with anything, it is the pose.
+            (&[FACE], preset("arm_to_face")),
+            (&[WEB, FACE], preset("arm_to_face")),
+            (&[UP, DOWN, FACE], preset("arm_to_face")),
         ];
         for (controls, want) in cases {
             let mut left = stowed("left");

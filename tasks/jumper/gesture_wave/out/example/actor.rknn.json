@@ -1,0 +1,47 @@
+{
+  "_source": "deploy/convert/onnx2rknn.py -- reconvert whenever actor.onnx changes",
+  "created": "2026-10-14T11:48:13+00:00",
+  "onnx": "tasks/jumper/gesture_wave/out/example/actor.onnx",
+  "onnx_sha256": "5cdc8dbf88f508436d95edc16c7aad0dc81de1be7017e9b3ee22fe2410036c71",
+  "target_platform": "rk3576",
+  "quantized": false,
+  "precision": "float16",
+  "toolkit_version": "2.3.2",
+  "obs_dim": 209,
+  "action_dim": 22,
+  "verification": {
+    "samples": 64,
+    "seed": 0,
+    "observations": "baked_normalizer",
+    "max_abs_diff": 0.0029320716857910156,
+    "mean_abs_diff": 0.00030608092822603794,
+    "max_abs_output": 4.985349178314209,
+    "tolerance": 0.02
+  },
+  "task_contract": {
+    "action_joint_order": [
+      "LF_J0_joint",
+      "LF_J1_joint",
+      "LF_J2_joint",
+      "LF_J3_joint",
+      "LF_J4_joint",
+      "RF_J0_joint",
+      "RF_J1_joint",
+      "RF_J2_joint",
+      "RF_J3_joint",
+      "RF_J4_joint",
+      "LM_J0_joint",
+      "LM_J1_joint",
+      "LM_J2_joint",
+      "RM_J0_joint",
+      "RM_J1_joint",
+      "RM_J2_joint",
+      "LR_J0_joint",
+      "LR_J1_joint",
+      "LR_J2_joint",
+      "RR_J0_joint",
+      "RR_J1_joint",
+      "RR_J2_joint"
+    ]
+  }
+}

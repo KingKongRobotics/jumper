@@ -222,6 +222,14 @@ def extension_for(extensions: dict, here: str) -> str | None:
     return None
 
 
+#: The extensions this process has loaded, by file. A second controller built
+#: from the same app -- two robots in one world, each with a controller of its
+#: own -- takes the module already loaded rather than loading the file again:
+#: CPython keeps one module per extension file, and asking it to execute the
+#: same single-phase module twice is not something every build answers alike.
+_EXTENSIONS: dict[str, Any] = {}
+
+
 def _load_extension(bundle: Path, manifest: dict) -> tuple[Any, str]:
     """The bundle's own controller if it carries one, else whatever is installed.
 
@@ -265,6 +273,9 @@ def _load_extension(bundle: Path, manifest: dict) -> tuple[Any, str]:
             # for anything else in the process -- but an extension already
             # imported under that name would be returned from CPython's own
             # cache instead of this file, so that case defers to it and says so.
+            if str(path) in _EXTENSIONS:
+                commit = runtime.get("commit", "?")
+                return _EXTENSIONS[str(path)], f"{path.name} from the app ({commit[:12]}), loaded earlier"
             if "mjrl_fsm" in sys.modules:
                 cached = sys.modules["mjrl_fsm"]
                 return cached, f"{cached.__file__} -- already imported, not this app's"
@@ -278,6 +289,7 @@ def _load_extension(bundle: Path, manifest: dict) -> tuple[Any, str]:
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
+                _EXTENSIONS[str(path)] = module
                 commit = runtime.get("commit", "?")
                 return module, f"{path.name} from the app ({commit[:12]})"
 
@@ -368,8 +380,16 @@ class AppPlayer:
     terms, taken over at construction, write the controller's targets instead.
     """
 
-    def __init__(self, app: App, env: Any, *, pad: Any = None) -> None:
-        """A key is handed to the controller stamped with the simulator's time,
+    def __init__(self, app: App, env: Any, *, pad: Any = None, entity: str = "robot",
+                 read_keys: bool = True, label: str = "") -> None:
+        """`entity` is the robot this controller drives, `"robot"` unless the
+        world holds more than one -- two crabs on a plank, each played by an
+        `AppPlayer` of its own from the same app. Only one of them can read the
+        viewer's keys (`read_keys`), and the pad is each one's own. `label`
+        prefixes what this one prints, so two controllers' lines can be told
+        apart.
+
+        A key is handed to the controller stamped with the simulator's time,
         and a held key's stick deflection grows on that clock (`full_after_s`
         in the task's `controls.yaml`). At real time the two agree; at `--speed
         2`, or on a machine that cannot keep up, a key held a second of the
@@ -400,7 +420,9 @@ class AppPlayer:
         wire: list[str] = next(iter(parsed.values()))["wire_joint_order"]
 
         unwrapped = env.unwrapped
-        robot = unwrapped.scene["robot"]
+        robot = unwrapped.scene[entity]
+        self._entity = entity
+        self._label = f"{label}: " if label else ""
         sim_names = list(robot.joint_names)
         missing = [n for n in wire if n not in sim_names]
         if missing:
@@ -462,9 +484,22 @@ class AppPlayer:
         self._robot = robot
         self._targets = robot.data.default_joint_pos.clone()
         self._sim_ids = torch.tensor(self._wire_from_sim, device=unwrapped.device)
+        # A second player in the same world joins the first term's list rather
+        # than replacing the first player: each writes its own robot's targets.
         manager = unwrapped.action_manager
-        for i, name in enumerate(manager.active_terms):
-            manager.get_term(name).apply_actions = self._apply if i == 0 else _nothing
+        first = manager.get_term(manager.active_terms[0])
+        players = getattr(first, "_app_players", None)
+        if players is None:
+            players = first._app_players = []
+
+            def apply_all() -> None:
+                for p in players:
+                    p._apply()
+
+            first.apply_actions = apply_all
+            for name in manager.active_terms[1:]:
+                manager.get_term(name).apply_actions = _nothing
+        players.append(self)
         # And their gains: the controller's per joint and per regime -- the
         # policy's, a switch-in ramp's, a hook's arm at a preset, a hold's
         # damping alone -- by each actuator's own joint names.
@@ -488,7 +523,8 @@ class AppPlayer:
         # viewer reports, down and up.
         self._viewer_keys = ViewerKeys(
             {c["glfw"]: name for name, c in vocabulary.key_codes().items()})
-        set_aside = keys.claim(self._on_key)
+        self._reads_keys = read_keys
+        set_aside = keys.claim(self._on_key) if read_keys else 0
         self._keys = keys
         self._pad = pad
         self._buttons = frozenset(b["name"] for b in vocabulary.load()["buttons"])
@@ -496,7 +532,7 @@ class AppPlayer:
         self._step_us = round(unwrapped.step_dt * 1e6)
         self._last_mode = ""
 
-        print(f"[play] playing the app at {bundle}")
+        print(f"[play] {self._label}playing the app at {bundle}, driving `{entity}`")
         print(f"[play]   controller: {origin}")
         # What the bundler said about it -- a mode still on ONNX, a missing
         # runtime -- is said again where somebody is looking.
@@ -504,7 +540,8 @@ class AppPlayer:
             print(f"[play]   note: {note}")
         print(f"[play]   modes: {', '.join(sorted(self._sessions))}; "
               f"the world is this environment's")
-        print("[play]   the person: the viewer's keys"
+        print("[play]   the person: "
+              + ("the viewer's keys" if read_keys else "no keys")
               + (" and the gamepad" if pad is not None else ", no gamepad")
               + (f" ({set_aside} other key reader(s) set aside)" if set_aside else ""))
         # The switches, the pad's and then the keyboard's: two paths since
@@ -525,7 +562,8 @@ class AppPlayer:
         return self._fsm
 
     def close(self) -> None:
-        self._keys.unregister(self._on_key)
+        if self._reads_keys:
+            self._keys.unregister(self._on_key)
         if self._pad is not None and hasattr(self._pad, "close"):
             self._pad.close()
 
@@ -626,11 +664,11 @@ class AppPlayer:
         # the rule index is the answer to the only question an FSM raises, and
         # two rules leading to one state look identical from outside.
         for at, source, target, rule, why in self._fsm.take_log():
-            print(f"\n[play] {at / 1e6:7.2f}s  {source} -> {target}   rule {rule}: {why}")
+            print(f"\n[play] {self._label}{at / 1e6:7.2f}s  {source} -> {target}   rule {rule}: {why}")
         mode = self._fsm.mode
         if mode != self._last_mode:
             state = "running" if self._fsm.running_policy else "holding"
-            print(f"\n[play] mode: {mode} ({state})")
+            print(f"\n[play] {self._label}mode: {mode} ({state})")
             self._last_mode = mode
 
 

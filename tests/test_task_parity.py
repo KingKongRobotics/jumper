@@ -57,6 +57,10 @@ NOT_LOCOMOTION = {
     "jumper.dance",
     # The same, each with a clip of its own, imported from rl-wbc-fsm.
     "jumper.dance_brazilian",
+    # The fetch film's two gestures (tools/fetch/make_zoidberg.py, make_sleep.py): clips
+    # of their own, the same 22-joint tracking skeleton as the dances, no gait.
+    "jumper.gesture_zoidberg",
+    "jumper.gesture_sleep",
     "jumper.dance_dream_wings",
     "jumper.dance_maze",
     "jumper.dance_waist",
@@ -93,6 +97,15 @@ NOT_LOCOMOTION = {
     # listing them as exemptions would empty the parity test rather than
     # describe it.
     "jumper.posture",
+    # jumper.posture again at a higher ceiling (the battle's dash): differs from
+    # the four exactly where posture does.
+    "jumper.sprint",
+    # jumper.jump's recording carried forward (the battle's dash): a clip, like the jump.
+    "jumper.dash",
+    # The battle's displays, clips of their own like the gestures above.
+    "jumper.gesture_threat",
+    "jumper.gesture_pump",
+    "jumper.gesture_wave",
 }
 
 #: Fields a task is allowed to differ on because **the gait fixes them**.

@@ -1,0 +1,207 @@
+# jumper.posture operator controls -- how a person's input becomes the two
+# commands the policy observes.
+#
+# Schema 2, with two commands: the velocity one every locomotion task has, and
+# the posture one only this task has. One person drives both, so `command` is a
+# list and one pad carries seven channels.
+#
+# ## The pad and the keyboard are two paths
+#
+# Either device drives every channel on its own, and the one touched last
+# drives. Each binds its own inputs straight to the axes below -- the pad a
+# stick with a sign, a split and a held layer, the keyboard a key with the
+# direction it pushes -- and neither names a control of the other. Until
+# 2026-09-29 the keyboard was a *virtual pad*, each key a stick direction read
+# through the pad's mapping; the layout asked for
+# needs J to turn while H and ; twist,
+# and N and M to be stances rather than a speed, which keys standing in for a
+# stick cannot be. The layout below is as revised on 2026-09-29.
+#
+#     does                          pad                             keyboard
+#     walk forward / back           left stick up / down            W S, or the arrows
+#     walk left / right             left stick left / right         A D, or the arrows
+#     pitch: nose down / up         right stick up / down           I K
+#     twist: ccw / clockwise        right stick l / r, first half   H ;
+#     turn: ccw / clockwise         right stick l / r, second half  J L
+#     roll: left side down / up     R3 held, right stick l / r      U O
+#     height up / down              R3 held, right stick up / down  N M, held
+#       -- on the pad a speed, and let go it stays where it is; on the keys
+#          the high and the low stance, and let go it is standing again
+#     height back to standing       R3 tapped                       (let N or M go)
+#     let go of everything          B                               Esc
+#     (hands off)                   stand still, level and square, at the height last set
+#
+# Hand-written: `write_controls.py` produces one command. Every control name
+# below is still checked against `controller/vocabulary.json` on load, so a typo
+# stops `play` rather than binding nothing.
+#
+# Two rules this file inherits from the specification it replaced:
+#   * Every value carries its source. A number without one cannot be told
+#     apart from a guess.
+#   * A consumer fails on a missing or malformed value rather than
+#     substituting a default. A sign that defaults to +1 is a robot that walks
+#     backwards while the screen looks perfectly normal.
+
+schema_version: 2
+
+command:
+  - term: twist
+    # The observation term these numbers are written into.
+    feeds: velocity_commands
+    # The robot's own frame: +X forward, +Y left, +Z up (ROS REP-103).
+    frame: body
+    # Order is the order the command term writes them, and therefore the order
+    # they appear in the observation.
+    axes:
+      - name: lin_vel_x
+        unit: m/s
+        positive: forward
+      - name: lin_vel_y
+        unit: m/s
+        positive: left
+      - name: ang_vel_z
+        unit: rad/s
+        positive: counter-clockwise
+    scaling:
+      # Full deflection is the edge of the range the policy was **trained** on,
+      # not an absolute speed -- so a stick means "as fast as this policy was
+      # ever asked to go" and cannot ask for something off-distribution.
+      rule: full_deflection_is_range_edge
+      formula: axis * (range_max if axis >= 0 else -range_min)
+      ends_scaled_separately: true
+
+  - term: posture
+    feeds: posture_command
+    # Each channel against its own reference, as `mdp/state.py` measures it.
+    frame: twist over the feet; pitch and roll against gravity; height above the feet
+    axes:
+      - name: twist
+        unit: rad
+        positive: counter-clockwise
+      - name: pitch
+        unit: rad
+        # Nose down, which is the right-hand rule about the body's +y (left) and
+        # jumper.five_foot's convention. It was nose up until 2026-09-26; the two
+        # tasks share the robot's pitch channel, so one of them had to move.
+        positive: nose down
+      - name: roll
+        unit: rad
+        positive: left side up
+      - name: height
+        unit: m
+        positive: up
+        # Where the height starts and where letting go of everything puts it
+        # back: the standing height, not zero -- zero is a body on the floor.
+        # Named rather than written, so it cannot drift from the command's own
+        # `neutral_height`.
+        rest: neutral_height
+        # The pad moves the height rather than places it (asked for on
+        # 2026-09-29): a deflection is a speed, full deflection carries it from
+        # the standing height to either end of its range in this many seconds,
+        # and let go it stays where it is. One second, chosen: two were reported
+        # too slow the same day, 22 mm/s up on a full stick. Training's height
+        # command jumps between draws, so a faster one asks nothing the policy
+        # has not seen; the body follows at its own pace. The keys place it
+        # (below), as the doc has N and M.
+        integrate_s: 1.0
+    scaling:
+      # The same rule, measured from `rest` rather than from zero; an axis that
+      # names no `rest` rests at zero. For the height it scales where the
+      # controls have moved it to rather than a stick's position.
+      rule: full_deflection_is_range_edge
+      formula: rest + axis * (range_max - rest if axis >= 0 else rest - range_min)
+      ends_scaled_separately: true
+
+devices:
+  gamepad:
+    # The stick position *is* the command, on every channel but the height,
+    # which it moves (`integrate_s` above).
+    scheme: absolute
+    layout: xbox
+    axes:
+      # Walking, as every locomotion task has it and with the same two evdev
+      # negations: Ly is positive **down**, Lx positive **right**.
+      lin_vel_x: { source: Ly, sign: -1 }
+      lin_vel_y: { source: Lx, sign: -1 }
+      # The right stick's left-right travel is two things in order: the first
+      # half twists the body over its planted feet, the second half turns.
+      # Past half-travel the turn climbs from zero and the twist unwinds, back
+      # to zero at three quarters, where the turn is at half its top rate: the
+      # body leads into the turn and is square again before the turn is fast.
+      # A turning robot is a walking one, so the moving band holds the twist to
+      # 15 degrees first and the unwinding comes under it at 0.625. The 0.75 is
+      # the turn's half-way point, so it moves if the turn's travel does. Asked
+      # for on 2026-09-28; measured against nothing. Right is clockwise, which
+      # is negative for both, as `ang_vel_z` has always been.
+      twist:     { source: Rx, sign: -1, travel: [0.0, 0.5, 0.5, 0.75] }
+      ang_vel_z: { source: Rx, sign: -1, travel: [0.5, 1.0] }
+      # Forward tips the nose down, as a flight stick does. Ry is positive
+      # towards the operator, pulling back is nose up, and nose up is negative
+      # pitch: -1. (+1 while pitch was nose-up positive; the stick did not move.)
+      pitch:     { source: Ry, sign: -1 }
+      # With R3 held the same left-right travel rolls instead, and twist and
+      # turn are both zero while it does. Right is right side down, which is left
+      # side up: +1.
+      roll:      { source: Rx, sign: 1, shifted: true }
+      # With R3 held the up-down travel is the height instead, and pitch is zero
+      # while it is: up is taller. Ry is positive towards the operator, so up is
+      # -1 and taller is +: -1, the sign pitch takes for nose down. A speed since
+      # 2026-09-29: let go of the stick, or of R3, and the height stays where it
+      # is. On the triggers until that morning, asked for then.
+      height:    { source: Ry, sign: -1, shifted: true }
+    # R3 is held, not toggled: the other layer is in for as long as the stick
+    # is pressed down and out the moment it comes up, so letting go of R3 is
+    # the turn and the pitch again at once (asked for on 2026-09-29). The
+    # keyboard needs no layer: the roll and the height have keys of their own.
+    shift: { button: R3, gesture: hold }
+    # A tap of R3 -- pressed and let go without the right stick moving -- puts
+    # the height back at standing (asked for on 2026-09-29). R3 is the shift as
+    # well, and the stick tells the two apart: R3 held and the stick pushed is
+    # the height or the roll, and that press is no tap.
+    reset: R3
+    # The pad service applies a 0.15 deadband and **rescales**, so full
+    # deflection still reaches ±1. A consumer that applies its own on top narrows
+    # the range a person can ask for and cannot tell that it has.
+    deadzone: device_reported_rescaled
+    # Hands both commands back to the random sampler in `play --task`; on a
+    # robot, which has no sampler, it lets go of everything, the height included.
+    release_button: B
+
+  keyboard:
+    # Keystrokes bound to what they do: each pushes one direction of one axis,
+    # "+" being the axis's own positive direction as `positive:` above words it,
+    # so the keyboard has no signs of its own -- there is no stick for a sign to
+    # be relative to.
+    scheme: keys
+    # Seconds a key is held for full deflection: the axis climbs linearly until
+    # then and is back at rest the moment the key comes up, as a stick let go
+    # of -- the height included: the keys place it where the stick moves it
+    # (`integrate_s` is the pad's). Asked for on 2026-09-26; measured against
+    # nothing.
+    full_after_s: 2.0
+    axes:
+      # Walking: W S and the arrows forward and back, A D and the arrows to the
+      # sides (the arrows asked for on 2026-09-28). Held with W, an arrow is
+      # summed with it, as two keys on one direction always are. In MuJoCo's
+      # viewer left and right also step a paused scene.
+      lin_vel_x: { "+": [key_w, key_up], "-": [key_s, key_down] }
+      lin_vel_y: { "+": [key_a, key_left], "-": [key_d, key_right] }
+      # J L turn and H ; twist, one row under the right hand: H left of J for
+      # the twist left, ; right of L for the twist right. The doc writes L for
+      # the twist right as well, which cannot be both; ; is the user's reading
+      # of it (2026-09-29). Shift + J L twisted until then.
+      ang_vel_z: { "+": [key_j], "-": [key_l] }
+      twist:     { "+": [key_h], "-": [key_semicolon] }
+      # I K tip the nose down and up, U O roll the left side down and up, N M
+      # hold the body high and low, all under the right hand -- stances, as U
+      # and O are: held, the body goes there, and let go it is back at standing
+      # (the doc: 松开回正). The doc's T and Y are a rotating jump nobody has
+      # trained, and are not bound. Every letter is also a MuJoCo viewer
+      # shortcut (`mdp/teleop.py` has the table).
+      pitch:     { "+": [key_i], "-": [key_k] }
+      roll:      { "+": [key_o], "-": [key_u] }
+      height:    { "+": [key_n], "-": [key_m] }
+    # Lets go of everything, as the pad's B does -- every key's hold, and the
+    # height the pad moved back at standing. Esc since 2026-09-29, when the
+    # doc put the right claw on B.
+    release: [key_escape]

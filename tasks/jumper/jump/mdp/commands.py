@@ -90,10 +90,12 @@ class JumpMotionCommand(CommandTerm):
         self._apex_rise = torch.zeros(self.num_envs, device=self.device)
         self._flight_s = torch.zeros(self.num_envs, device=self.device)
         self._takeoff_vz = torch.zeros(self.num_envs, device=self.device)
+        self._travel = torch.zeros(self.num_envs, device=self.device)
         self._contact_sensor: ContactSensor | None = None
         self.metrics["apex_rise"] = self._apex_rise
         self.metrics["flight_s"] = self._flight_s
         self.metrics["takeoff_vz"] = self._takeoff_vz
+        self.metrics["travel"] = self._travel
 
     # ── Queries ────────────────────────────────────────────────────────
     @property
@@ -128,11 +130,13 @@ class JumpMotionCommand(CommandTerm):
         self._apex_rise[env_ids] = 0.0
         self._flight_s[env_ids] = 0.0
         self._takeoff_vz[env_ids] = 0.0
+        self._travel[env_ids] = 0.0
 
     def _update_metrics(self) -> None:
         self.metrics["apex_rise"] = self._apex_rise
         self.metrics["flight_s"] = self._flight_s
         self.metrics["takeoff_vz"] = self._takeoff_vz
+        self.metrics["travel"] = self._travel
 
     def _update_command(self, env_ids: torch.Tensor | None = None) -> None:
         if env_ids is not None:
@@ -141,6 +145,10 @@ class JumpMotionCommand(CommandTerm):
         robot = self.robot
         z = robot.data.root_link_pos_w[:, 2] - self._env.scene.env_origins[:, 2]
         torch.maximum(self._apex_rise, z - self._stance_z, out=self._apex_rise)
+        # Ground gained along the spawn's x since the reset: the jump's is drift,
+        # the dash's (`jumper.dash`) is the point.
+        x = robot.data.root_link_pos_w[:, 0] - self._env.scene.env_origins[:, 0]
+        torch.maximum(self._travel, x, out=self._travel)
 
         if self._contact_sensor is None:
             try:

@@ -116,6 +116,10 @@ enter = "@initial"
 when = "button:jump"
 enter = "jump"
 
+[[fsm.rule]]
+when = "button:dash"
+enter = "dash"
+
 # Same place in the order and for the same reason: the operator can ask for a
 # dance, and cannot ask for one while the robot is tilted or blind. Each of
 # these releases itself when its recording ends -- see
@@ -155,6 +159,34 @@ enter = "gesture_paw"
 when = "button:gesture_salute"
 enter = "gesture_salute"
 
+# The Zoidberg (tools/fetch/make_zoidberg.py, 2026-10-13): a gesture of this
+# repository's own, on X, reachable from the claw modes too so the fetch's
+# excitement needs no detour through the walk.
+[[fsm.rule]]
+when = "button:gesture_zoidberg"
+enter = "gesture_zoidberg"
+
+# The sleep (tools/fetch/make_sleep.py, 2026-10-13): the same kind of gesture, on Y.
+[[fsm.rule]]
+when = "button:gesture_sleep"
+enter = "gesture_sleep"
+
+# The crab battle's gestures (tools/battle/make_threat.py, make_pump.py,
+# make_wave.py, 2026-10-14): the threat display, the claw pump and the wave,
+# on Menu chords with X, Y and A, the same kind of gesture as the Zoidberg.
+[[fsm.rule]]
+when = "button:gesture_threat"
+enter = "gesture_threat"
+
+[[fsm.rule]]
+when = "button:gesture_pump"
+enter = "gesture_pump"
+
+[[fsm.rule]]
+when = "button:gesture_wave"
+enter = "gesture_wave"
+
+
 # The claw, carried on either side: one jumper.five_foot export, two modes, the
 # side in each one's hook. Below the recordings, and that is not only habit:
 # the pad's Menu + d-pad chords reach a dance from a claw mode, whose own
@@ -172,6 +204,10 @@ enter = "claw_right"
 [[fsm.rule]]
 when = "button:claw_left"
 enter = "claw_left"
+
+[[fsm.rule]]
+when = "button:sprint"
+enter = "sprint"
 
 # The last rule must be `always`: a cascade that can fall through the bottom has
 # no defined behaviour, and the crate refuses to load one that does.

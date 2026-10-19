@@ -494,13 +494,13 @@ def test_the_claw_is_on_the_operator_s_keys() -> None:
     # its own file rather than restated here.
     controls = tasks.load_env_cfg("jumper.five_foot", play=True).commands["twist"].controls
     assert set(controls.task) == {"claw_left", "claw_right", "arm_thumb_up", "arm_thumb_down",
-                                  "arm_web_up"}
+                                  "arm_web_up", "arm_to_face"}
     assert (controls.pad_task["claw_left"], controls.key_task["claw_left"]) == ("LT", ("key_space",))
     assert not {"LT", "RT"} & controls.sources, "a command reads the claw's trigger"
 
     # Control group: the keys are the ones its legend claims -- W S A D and the
-    # arrows, I K, J L, H ;, U O, Esc, Space, Shift, Alt and Ctrl.
-    assert len(controls.keystrokes) == 21, controls.keystrokes
+    # arrows, I K, J L, H ;, U O, Esc, Space, Shift, Alt, Ctrl and Q.
+    assert len(controls.keystrokes) == 22, controls.keystrokes
 
 
 def test_five_foot_drives_its_attitude_as_posture_does() -> None:

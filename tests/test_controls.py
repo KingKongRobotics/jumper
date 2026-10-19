@@ -478,7 +478,8 @@ def test_what_the_task_keeps_reaches_the_contract(tmp_path) -> None:
     path = tmp_path / "controls.yaml"
     path.write_text(yaml.safe_dump(_five_foot_doc()), "utf-8")
     kept = load_controls(path)
-    assert set(kept.task) == {"claw_left", "claw_right", "arm_thumb_up", "arm_thumb_down", "arm_web_up"}
+    assert set(kept.task) == {"claw_left", "claw_right", "arm_thumb_up", "arm_thumb_down", "arm_web_up",
+                              "arm_to_face"}
     assert load_controls(POSTURE_SPEC).task == {}
 
     block = tasks.load_env_cfg("jumper.five_foot").controller_contract()

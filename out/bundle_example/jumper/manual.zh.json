@@ -181,6 +181,11 @@
           "control": "dpad_left",
           "pad": "十字键左",
           "does": "按住时手臂向前伸直，虎口朝上"
+        },
+        {
+          "control": "dpad_right",
+          "pad": "十字键右",
+          "does": "按住时手臂向内弯曲，爪子停在面罩前"
         }
       ],
       "keys": [
@@ -237,6 +242,10 @@
           "does": "横滚：右侧低"
         },
         {
+          "key": "Q",
+          "does": "按住时手臂向内弯曲，爪子停在面罩前"
+        },
+        {
           "key": "→",
           "does": "右移"
         },
@@ -250,7 +259,7 @@
         },
         {
           "key": "Space",
-          "does": "按住越久，左爪夹得越紧；松开即张开"
+          "does": "按多深，左爪就夹多紧"
         },
         {
           "key": "U",
@@ -328,6 +337,11 @@
           "control": "dpad_left",
           "pad": "十字键左",
           "does": "按住时手臂向前伸直，虎口朝上"
+        },
+        {
+          "control": "dpad_right",
+          "pad": "十字键右",
+          "does": "按住时手臂向内弯曲，爪子停在面罩前"
         }
       ],
       "keys": [
@@ -384,6 +398,10 @@
           "does": "横滚：右侧低"
         },
         {
+          "key": "Q",
+          "does": "按住时手臂向内弯曲，爪子停在面罩前"
+        },
+        {
           "key": "→",
           "does": "右移"
         },
@@ -397,7 +415,7 @@
         },
         {
           "key": "Space",
-          "does": "按住越久，右爪夹得越紧；松开即张开"
+          "does": "按多深，右爪就夹多紧"
         },
         {
           "key": "U",
@@ -462,6 +480,17 @@
       "keys": []
     },
     {
+      "mode": "dash",
+      "task": "jumper.dash",
+      "default": false,
+      "summary": "一段 1.5 秒的录制动作，进入此模式即开始播放。",
+      "enter": "左摇杆按下（L3），或键盘：Num 5",
+      "leave": "动作播完后自动回到 locomotion；再按一次切换键可提前停止。",
+      "keyboard": "此模式不读取任何摇杆、扳机或按键。",
+      "controls": [],
+      "keys": []
+    },
+    {
       "mode": "gesture_bow",
       "task": "jumper.gesture_bow",
       "default": false,
@@ -495,11 +524,66 @@
       "keys": []
     },
     {
+      "mode": "gesture_pump",
+      "task": "jumper.gesture_pump",
+      "default": false,
+      "summary": "一段 10.5 秒的录制动作，进入此模式即开始播放。",
+      "enter": "按住 Menu 再按 Y，或键盘：Num 8",
+      "leave": "动作播完后自动回到 locomotion；再按一次切换键可提前停止。单独按下再松开 Menu（键盘：单独按下再松开 Ctrl）会打断动作，回到 locomotion。",
+      "keyboard": "此模式不读取任何摇杆、扳机或按键。",
+      "controls": [],
+      "keys": []
+    },
+    {
       "mode": "gesture_salute",
       "task": "jumper.gesture_salute",
       "default": false,
       "summary": "一段 6.0 秒的录制动作，进入此模式即开始播放。",
       "enter": "十字键右，或键盘：4，或键盘：Num 4",
+      "leave": "动作播完后自动回到 locomotion；再按一次切换键可提前停止。单独按下再松开 Menu（键盘：单独按下再松开 Ctrl）会打断动作，回到 locomotion。",
+      "keyboard": "此模式不读取任何摇杆、扳机或按键。",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_sleep",
+      "task": "jumper.gesture_sleep",
+      "default": false,
+      "summary": "一段 18.8 秒的录制动作，进入此模式即开始播放。",
+      "enter": "Y，或键盘：Q",
+      "leave": "动作播完后自动回到 locomotion；再按一次切换键可提前停止。单独按下再松开 Menu（键盘：单独按下再松开 Ctrl）会打断动作，回到 locomotion。",
+      "keyboard": "此模式不读取任何摇杆、扳机或按键。",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_threat",
+      "task": "jumper.gesture_threat",
+      "default": false,
+      "summary": "一段 9.7 秒的录制动作，进入此模式即开始播放。",
+      "enter": "按住 Menu 再按 X，或键盘：Num 7",
+      "leave": "动作播完后自动回到 locomotion；再按一次切换键可提前停止。单独按下再松开 Menu（键盘：单独按下再松开 Ctrl）会打断动作，回到 locomotion。",
+      "keyboard": "此模式不读取任何摇杆、扳机或按键。",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_wave",
+      "task": "jumper.gesture_wave",
+      "default": false,
+      "summary": "一段 10.9 秒的录制动作，进入此模式即开始播放。",
+      "enter": "按住 Menu 再按 A，或键盘：Num 9",
+      "leave": "动作播完后自动回到 locomotion；再按一次切换键可提前停止。单独按下再松开 Menu（键盘：单独按下再松开 Ctrl）会打断动作，回到 locomotion。",
+      "keyboard": "此模式不读取任何摇杆、扳机或按键。",
+      "controls": [],
+      "keys": []
+    },
+    {
+      "mode": "gesture_zoidberg",
+      "task": "jumper.gesture_zoidberg",
+      "default": false,
+      "summary": "一段 10.5 秒的录制动作，进入此模式即开始播放。",
+      "enter": "X，或键盘：G",
       "leave": "动作播完后自动回到 locomotion；再按一次切换键可提前停止。单独按下再松开 Menu（键盘：单独按下再松开 Ctrl）会打断动作，回到 locomotion。",
       "keyboard": "此模式不读取任何摇杆、扳机或按键。",
       "controls": [],
@@ -515,9 +599,141 @@
       "keyboard": "此模式不读取任何摇杆、扳机或按键。",
       "controls": [],
       "keys": []
+    },
+    {
+      "mode": "sprint",
+      "task": "jumper.sprint",
+      "default": false,
+      "summary": "独立的模式，有自己的一套操作。",
+      "enter": "按住 Menu 再按左肩键（LB），或键盘：Num 6",
+      "leave": "再按一次它的切换键，回到 locomotion。",
+      "keyboard": "按住一个键，它控制的量随按住的时间逐渐加大（2 秒后到满量），松开立即回到静止；身高也一样：摇杆是移动身高，键盘是摆出高/低站姿，松开回到站立高度。",
+      "controls": [
+        {
+          "control": "Ly",
+          "pad": "左摇杆上下",
+          "does": "上：前进；下：后退"
+        },
+        {
+          "control": "Lx",
+          "pad": "左摇杆左右",
+          "does": "左：左移；右：右移"
+        },
+        {
+          "control": "Ry",
+          "pad": "右摇杆上下",
+          "does": "上：低头；下：抬头；按住右摇杆（R3）时——上：升高（持续移动，松开即停留）；下：降低（持续移动，松开即停留）"
+        },
+        {
+          "control": "Rx",
+          "pad": "右摇杆左右",
+          "does": "左：推到一半以内是左扭，再往外推是左转；右：推到一半以内是右扭，再往外推是右转；按住右摇杆（R3）时——左：横滚，左侧低；右：横滚，右侧低"
+        },
+        {
+          "control": "R3",
+          "pad": "右摇杆按下（R3）",
+          "does": "按住切换到摇杆的另一层；轻点（按下后摇杆不动就松开）把身高恢复到站立高度"
+        },
+        {
+          "control": "B",
+          "pad": "B",
+          "does": "全部松开：所有操作回到静止"
+        }
+      ],
+      "keys": [
+        {
+          "key": "A",
+          "does": "左移"
+        },
+        {
+          "key": "D",
+          "does": "右移"
+        },
+        {
+          "key": "↓",
+          "does": "后退"
+        },
+        {
+          "key": "Esc",
+          "does": "全部松开：所有操作回到静止"
+        },
+        {
+          "key": "H",
+          "does": "左扭"
+        },
+        {
+          "key": "I",
+          "does": "低头"
+        },
+        {
+          "key": "J",
+          "does": "左转"
+        },
+        {
+          "key": "K",
+          "does": "抬头"
+        },
+        {
+          "key": "L",
+          "does": "右转"
+        },
+        {
+          "key": "←",
+          "does": "左移"
+        },
+        {
+          "key": "M",
+          "does": "降低（按住保持低站姿，松开回到站立高度）"
+        },
+        {
+          "key": "N",
+          "does": "升高（按住保持高站姿，松开回到站立高度）"
+        },
+        {
+          "key": "O",
+          "does": "横滚：右侧低"
+        },
+        {
+          "key": "→",
+          "does": "右移"
+        },
+        {
+          "key": "S",
+          "does": "后退"
+        },
+        {
+          "key": ";",
+          "does": "右扭"
+        },
+        {
+          "key": "U",
+          "does": "横滚：左侧低"
+        },
+        {
+          "key": "↑",
+          "does": "前进"
+        },
+        {
+          "key": "W",
+          "does": "前进"
+        }
+      ]
     }
   ],
   "switches": [
+    {
+      "device": "pad",
+      "control": "A",
+      "with": "menu",
+      "keys": [],
+      "pad": "按住 Menu 再按 A",
+      "does": "进入 gesture_wave；再按一次退出（仅在 locomotion、claw_left、claw_right 中有效）",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
     {
       "device": "pad",
       "control": "A",
@@ -531,6 +747,58 @@
     },
     {
       "device": "pad",
+      "control": "X",
+      "with": "menu",
+      "keys": [],
+      "pad": "按住 Menu 再按 X",
+      "does": "进入 gesture_threat；再按一次退出（仅在 locomotion、claw_left、claw_right 中有效）",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "X",
+      "with": null,
+      "keys": [],
+      "pad": "X",
+      "does": "进入 gesture_zoidberg；再按一次退出（仅在 locomotion、claw_left、claw_right 中有效）",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "Y",
+      "with": "menu",
+      "keys": [],
+      "pad": "按住 Menu 再按 Y",
+      "does": "进入 gesture_pump；再按一次退出（仅在 locomotion、claw_left、claw_right 中有效）",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "Y",
+      "with": null,
+      "keys": [],
+      "pad": "Y",
+      "does": "进入 gesture_sleep；再按一次退出（仅在 locomotion、claw_left、claw_right 中有效）",
+      "from": [
+        "locomotion",
+        "claw_left",
+        "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
       "control": "LB",
       "with": null,
       "keys": [],
@@ -539,6 +807,17 @@
       "from": [
         "locomotion",
         "claw_right"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "LB",
+      "with": "menu",
+      "keys": [],
+      "pad": "按住 Menu 再按左肩键（LB）",
+      "does": "进入 sprint；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
       ]
     },
     {
@@ -559,7 +838,7 @@
       "with": null,
       "keys": [],
       "pad": "单独按下再松开 Menu",
-      "does": "退出 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute 中正在进行的那一个，回到 locomotion（仅在 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute 中有效）",
+      "does": "退出 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute、gesture_zoidberg、gesture_sleep、gesture_threat、gesture_pump、gesture_wave 中正在进行的那一个，回到 locomotion（仅在 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute、gesture_zoidberg、gesture_sleep、gesture_threat、gesture_pump、gesture_wave 中有效）",
       "from": [
         "dance_crab",
         "dance_brazilian",
@@ -568,7 +847,23 @@
         "gesture_hello",
         "gesture_bow",
         "gesture_paw",
-        "gesture_salute"
+        "gesture_salute",
+        "gesture_zoidberg",
+        "gesture_sleep",
+        "gesture_threat",
+        "gesture_pump",
+        "gesture_wave"
+      ]
+    },
+    {
+      "device": "pad",
+      "control": "L3",
+      "with": null,
+      "keys": [],
+      "pad": "左摇杆按下（L3）",
+      "does": "进入 dash；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
       ]
     },
     {
@@ -707,7 +1002,7 @@
         "Ctrl"
       ],
       "pad": null,
-      "does": "退出 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute 中正在进行的那一个，回到 locomotion（仅在 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute 中有效）",
+      "does": "退出 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute、gesture_zoidberg、gesture_sleep、gesture_threat、gesture_pump、gesture_wave 中正在进行的那一个，回到 locomotion（仅在 dance_crab、dance_brazilian、dance_maze、dance_dream_wings、gesture_hello、gesture_bow、gesture_paw、gesture_salute、gesture_zoidberg、gesture_sleep、gesture_threat、gesture_pump、gesture_wave 中有效）",
       "from": [
         "dance_crab",
         "dance_brazilian",
@@ -716,7 +1011,12 @@
         "gesture_hello",
         "gesture_bow",
         "gesture_paw",
-        "gesture_salute"
+        "gesture_salute",
+        "gesture_zoidberg",
+        "gesture_sleep",
+        "gesture_threat",
+        "gesture_pump",
+        "gesture_wave"
       ]
     },
     {
@@ -955,6 +1255,32 @@
     },
     {
       "device": "keyboard",
+      "control": "key_g",
+      "with": null,
+      "keys": [
+        "G"
+      ],
+      "pad": null,
+      "does": "进入 gesture_zoidberg；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "key_q",
+      "with": null,
+      "keys": [
+        "Q"
+      ],
+      "pad": null,
+      "does": "进入 gesture_sleep；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
       "control": "key_space",
       "with": null,
       "keys": [
@@ -1028,6 +1354,71 @@
       ],
       "pad": null,
       "does": "进入 gesture_salute；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_5",
+      "with": null,
+      "keys": [
+        "Num 5"
+      ],
+      "pad": null,
+      "does": "进入 dash；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_6",
+      "with": null,
+      "keys": [
+        "Num 6"
+      ],
+      "pad": null,
+      "does": "进入 sprint；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_7",
+      "with": null,
+      "keys": [
+        "Num 7"
+      ],
+      "pad": null,
+      "does": "进入 gesture_threat；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_8",
+      "with": null,
+      "keys": [
+        "Num 8"
+      ],
+      "pad": null,
+      "does": "进入 gesture_pump；再按一次退出（仅在 locomotion 中有效）",
+      "from": [
+        "locomotion"
+      ]
+    },
+    {
+      "device": "keyboard",
+      "control": "keypad_9",
+      "with": null,
+      "keys": [
+        "Num 9"
+      ],
+      "pad": null,
+      "does": "进入 gesture_wave；再按一次退出（仅在 locomotion 中有效）",
       "from": [
         "locomotion"
       ]
