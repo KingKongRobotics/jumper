@@ -70,6 +70,7 @@ class Mapper:
         self.decay_s = None                                  # log-odds half-life toward unknown, s (None: never): a room
                                                              # of things that move is a map of where they were
         self._known = None                                   # cells `known` set, re-asserted through the decay
+        self.known_absolute = False                          # True: a shift leaves the known cells in place (see shift)
 
     # -- frames -------------------------------------------------------------------
     def cell(self, wx, wy):
@@ -143,9 +144,18 @@ class Mapper:
         # the grid shifts by whole cells; the remainder waits for the next fix
         sc, sr = int(round(self._carry[0] / RES)), int(round(self._carry[1] / RES))
         if sc or sr:
-            self.grid = np.roll(self.grid, (sr, sc), axis=(0, 1))
-            if self._known is not None:
-                self._known = np.roll(self._known, (sr, sc), axis=(0, 1))
+            if self.known_absolute and self._known is not None:
+                # known cells are where the world has them, not where a drifted pose drew them: they
+                # are lifted out, the sensed rest is moved, and they go back where they were. Rolled
+                # with the rest, the obstacle course's pillars walked 0.86 m along the lane and 0.2 m
+                # across it over the hill's fixes and walled the lane off (blue101 L, red211)
+                self.grid[self._known] = 0.0
+                self.grid = np.roll(self.grid, (sr, sc), axis=(0, 1))
+                self.grid[self._known] = CLAMP
+            else:
+                self.grid = np.roll(self.grid, (sr, sc), axis=(0, 1))
+                if self._known is not None:
+                    self._known = np.roll(self._known, (sr, sc), axis=(0, 1))
             if sr > 0:
                 self.grid[:sr, :] = 0.0                      # (the wrapped edge is unknown again)
             elif sr < 0:
@@ -319,10 +329,20 @@ class Mapper:
         sel = (along > 0.0) & (along < length) & (np.abs(across) < half_width)
         return float(along[sel].min()) if sel.any() else length
 
-    def plan(self, goal_w, inflate=None):
+    def plan(self, goal_w, inflate=None, margin=0.0, margin_cost=0.0):
         """A* over the inflated grid from the base to `goal_w` (world xy); unknown cells
-        count as free. Returns the path as world xy (empty when unreachable)."""
+        count as free. Returns the path as world xy (empty when unreachable).
+
+        `margin` > 0 makes cells within that distance of an occupied cell dearer, by up to
+        `margin_cost` per step at the inflation's edge, so the path keeps to the middle of a
+        gap instead of grazing the inflation (off by default: the fetch and the race plan
+        as they did)."""
         blocked = self.inflated() if inflate is None else inflate
+        extra = None
+        if margin > 0.0 and margin_cost > 0.0:
+            from scipy import ndimage
+            d = ndimage.distance_transform_edt(~(self.grid > OCC)) * RES
+            extra = margin_cost * np.clip((margin - d) / max(1e-6, margin - self.inflate_m), 0.0, 1.0)
         sr, sc = self.cell(self.x, self.y)
         gr, gc = self.cell(*goal_w)
         sr, sc, gr, gc = (min(max(v, 0), N - 1) for v in (sr, sc, gr, gc))
@@ -348,11 +368,12 @@ class Mapper:
                 nr, nc = cur[0] + dr, cur[1] + dc
                 if not (0 <= nr < N and 0 <= nc < N) or blocked[nr, nc]:
                     continue
-                ng = g[cur] + w
+                ng = g[cur] + w + (float(extra[nr, nc]) if extra is not None else 0.0)
                 if ng < g.get((nr, nc), 1e9):
                     g[(nr, nc)] = ng
                     came[(nr, nc)] = cur
                     heapq.heappush(pq, (ng + math.hypot(nr - gr, nc - gc), (nr, nc)))
+        self.last_plan = {"found": found, "pops": n_pop, "start": (sr, sc), "goal": (gr, gc)}   # for a caller's trace
         if not found:
             self.path = []
             return []
@@ -363,11 +384,11 @@ class Mapper:
         self.path = [self.world(r, c) for r, c in cells]
         return self.path
 
-    def next_point(self, goal_w, lookahead=0.5):
+    def next_point(self, goal_w, lookahead=0.5, margin=0.0, margin_cost=0.0):
         """Plan to `goal_w` and return the world point about `lookahead` metres along the
         path (None when no path). Planning costs ~20 ms; call it a few times a second
         and steer at the returned point in between (`bearing_to`)."""
-        path = self.plan(goal_w)
+        path = self.plan(goal_w, margin=margin, margin_cost=margin_cost)
         if not path:
             return None
         d = 0.0
