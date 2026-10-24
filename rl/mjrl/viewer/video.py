@@ -47,8 +47,10 @@ __all__ = ["ReplayVideo"]
 class _ReplayRenderer(OffscreenRenderer):
     """Use the native appearance model without assigning stripped geom arrays to it."""
 
-    def __init__(self, sim, cfg, scene):
+    def __init__(self, sim, cfg, scene, lookat_offset=None):
         self._sim = sim
+        self._lookat_offset = None if lookat_offset is None else np.asarray(lookat_offset, dtype=float)
+        self._track_body = None
         physics = sim.mj_model
         model = getattr(sim, "render_model", physics)
         self._geom_map = None
@@ -78,6 +80,23 @@ class _ReplayRenderer(OffscreenRenderer):
             if len(moving):
                 self._cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
                 self._cam.trackbodyid = int(moving[0])
+        if self._lookat_offset is not None and self._cam.type == mujoco.mjtCamera.mjCAMERA_TRACKING:
+            # A following camera that looks beside the body: MuJoCo's tracking camera looks at
+            # the body's centre of mass and nowhere else, so the camera is made free and pointed
+            # at the body plus the offset each frame (`update`). The obstacle course's readout
+            # covers the frame's top left, and the crab is kept out from under it this way
+            # (Andrew: "offset it a little so the crab itself doesn't get covered by any of the
+            # overlay")
+            self._track_body = int(self._cam.trackbodyid)
+            self._cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+
+    def update(self, data, debug_vis_callback=None, camera=None):
+        if self._track_body is not None and camera is None and int(data.nworld) > 0:
+            if self._env_ids is None:
+                self._env_ids = self._get_env_ids(self._cfg, self._scene.env_origins.cpu().numpy())
+            self._sync_data_fields(data, self._env_ids[0])
+            self._cam.lookat[:] = self._data.subtree_com[self._track_body] + self._lookat_offset
+        super().update(data, debug_vis_callback=debug_vis_callback, camera=camera)
 
     def _sync_model_fields(self, env_idx: int) -> None:
         # Query each time: expansion can happen after a renderer was constructed.
@@ -207,8 +226,9 @@ class ReplayVideo:
 
     def __init__(self, env, path, *, fps=30, width=640, height=480,
                  env_index=0, camera_distance=None, azimuth=None, elevation=None,
-                 lookat_height=None, follow=True):
+                 lookat_height=None, follow=True, lookat_offset=None):
         self._env = getattr(env, "unwrapped", env)
+        self._lookat_offset = lookat_offset             # (dx, dy, dz) in the world, from the followed body's centre
         self.path = Path(path)
         if self.path.suffix.lower() != ".mp4":
             raise ValueError("Replay video output must have an .mp4 extension")
@@ -256,7 +276,9 @@ class ReplayVideo:
                 env_index=self._env_index, camera_distance=self._camera_distance,
                 pose=_first_pose(self._env, self._env_index), **self._camera,
             )
-            self._renderer = _ReplayRenderer(sim, cfg, self._env.scene)
+            # the offset only when asked for: every other caller constructs the renderer as before
+            extra = {} if self._lookat_offset is None else {"lookat_offset": self._lookat_offset}
+            self._renderer = _ReplayRenderer(sim, cfg, self._env.scene, **extra)
             self._renderer.initialize()
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self._writer = imageio_ffmpeg.write_frames(

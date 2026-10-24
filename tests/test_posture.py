@@ -173,17 +173,25 @@ def test_the_mirror_of_a_posture_is_the_posture_of_the_mirror() -> None:
     # the permutation `symmetry.LEG_PERM` carries for per-foot quantities.
     from tasks.jumper.common.mdp.symmetry import LEG_PERM
 
-    twisted = _footprint(math.radians(10.0))
-    mirrored = twisted[LEG_PERM] * torch.tensor([1.0, -1.0])
-    # 1e-4 rather than the 1e-5 the other tests use: the robot's own footprint is
-    # not exactly mirror symmetric (LF sits at y = 0.0728 against RF's 0.072607,
-    # 0.2 mm apart), so mirroring a twisted footprint and re-fitting it lands
-    # 6e-5 rad -- 0.003 degrees -- from the exact negation. That is the model's
-    # asymmetry, not the estimator's error, and a tolerance tight enough to
-    # object to it would be pinning the URDF's rounding.
-    assert twist_from_footprint(mirrored).item() == pytest.approx(
-        -math.radians(10.0), abs=1e-4
-    )
+    def mirror(fp: torch.Tensor) -> torch.Tensor:
+        return fp[LEG_PERM] * torch.tensor([1.0, -1.0])
+
+    # Against the mirror of the UNtwisted footprint, not against zero: the V1.6
+    # footprint is not mirror symmetric (LF at (0.1871, 0.0728) against RF's
+    # (0.1836, -0.0690), the front pads 3.5-3.8 mm apart), so a mirrored stance
+    # reads 0.0017 rad (0.096 degrees) of twist before any twist is applied --
+    # the model's asymmetry, a constant at every angle, not the estimator's
+    # error. This test once compared against zero at 1e-4, written when the
+    # front feet were 0.2 mm apart, and failed from the V1.6 model on. With the
+    # baseline removed the mirror is exact to 2e-8 at -15..45 degrees.
+    bias = twist_from_footprint(mirror(_footprint(0.0))).item()
+    for deg in (-15.0, 10.0, 45.0):
+        got = twist_from_footprint(mirror(_footprint(math.radians(deg)))).item()
+        assert got - bias == pytest.approx(-math.radians(deg), abs=1e-5)
+    # ...and the bias itself stays the model's few millimetres: a wrong LEG_PERM
+    # (the legs not swapped) reads the mirrored stance as tens of degrees, so
+    # this half is what fails if the permutation is broken
+    assert abs(bias) < math.radians(0.2)
 
 
 # ──────────────────────────────────────────────────────────────────────

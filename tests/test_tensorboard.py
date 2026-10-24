@@ -161,7 +161,13 @@ def test_free_port_ignores_a_lingering_time_wait() -> None:
     would skip a perfectly usable 6006 and the URL would climb 6006 -> 6007 ->
     6008 run after run, which makes a bookmark worthless.
     """
+    # The stand-in server sets SO_REUSEADDR because TensorBoard's does (werkzeug's
+    # `allow_reuse_address = True`), and on Linux a TIME_WAIT entry yields to a new
+    # bind only when BOTH sockets set it: without it here the test failed on Linux
+    # with the probe correct, and passed only on macOS's looser rule. The probe
+    # without SO_REUSEADDR still fails this test (measured on Linux 6.18).
     srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("127.0.0.1", 0))
     srv.listen(1)
     port = srv.getsockname()[1]
