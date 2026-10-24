@@ -19,7 +19,7 @@ would be nice and maybe some other shapes as well."
 | `referee.py` | the count on each half (ground truth, the referee's alone), the clock, the winner's dance |
 | `sight.py` | one crab's dToF reading: the clusters that are object-sized, the kerb's points, the other crab |
 | `pilots/sweeper.py` | the pilot: remember things, pick on the wrong half (a cluster first, then the back row, then the nearest), get behind it, shove it over; `--red-truth` makes it read the world instead |
-| `hud.py` | the readout in each top corner: depth image (grey by range; blue the crab's own legs and claws, red the things, yellow the kerb, magenta the other crab), map with the plan and the remembered things, the pad; the score and clock across the top |
+| `hud.py` | the readout in each top corner, the obstacle course's panel scaled to fit two (`wide_panel`): depth image (grey by range; blue the crab's own legs and claws, red the things, yellow the kerb, magenta the other crab), map with the plan and the remembered things, the IMU, the sticks, the legs; the score and a large clock between them |
 | `race.py` | the runner: two `AppPlayer`s on one app, as `tools/battle/duel.py` |
 
 Everything reused is the fetch film's and the battle's: the second crab and the
@@ -507,3 +507,10 @@ at a slower pace. Each shove is 10-15 s from the pick to the back-off.
 on the room; `SWEEP_WALK`, `SWEEP_PUSH`, `SWEEP_BEHIND_M`, `SWEEP_OVER_M`,
 `SWEEP_FWD_PER`, `SWEEP_SIDE_PER` on the pilot; `--race-s`, `--objects`,
 `--seed`, `--no-hud`, `--no-moves` on the runner.
+
+`--seed` seeds the whole take (2026-10-23): the layout, the pilots' rolls and the
+environment's generators (random, numpy, torch: the reset and the sensors' noise),
+as the obstacle course's `COURSE_SEED`. Before, it seeded the first two only, so
+no take could be run again and a good one could not be rendered at 4K. Two
+seeded 720p takes (seed 7) printed the same log line for line over 20 s, fix
+counts included, and a 4K take of the same seed has the same frame at 7 s.

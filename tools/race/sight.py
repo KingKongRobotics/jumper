@@ -33,6 +33,16 @@ FLOOR_SLOPE = 0.025               # ...plus this per metre of range: the plane i
                                   # read as a low thing at the kerb's foot, seen twice while the crab turned on the
                                   # spot and picked (ghosts at 0.1-0.3 m from the wall, probe_orbitwall2). A 7 cm
                                   # puck keeps its top above the line to 1.6 m; beyond that it is 2-3 zones anyway
+FIT_RANGE = 3.0                   # m: the course's floor reset (`slopes`), each frame -- the floor zones within this
+FIT_CLEAR, FIT_SLOPE = 0.03, 0.008 # range fit a plane of their own, and a zone this far above THAT, continuing a
+FIT_TILT_DEG, FIT_SHIFT = 5.0, 0.05 # found cluster in depth, is part of it. The plane through the lowest foot along
+                                  # the IMU's up is off after a hung landing or a foot on an edge, and the 2.5 cm/m band
+                                  # that absorbs it left the lower half of a 24 cm ball and the feet of the pillars grey
+                                  # in the readout (Andrew, 2026-10-23: "it only highlights half a ball"). Clusters are
+                                  # still FOUND on that band: see `update`. The simulated ranges carry no noise; fitted
+                                  # within 1 m (the forest hides the far floor) a 1 degree error was 5 cm at 2.5 m, hence
+                                  # the fit weighted by range and the band's slope. A fit tilted or shifted past
+                                  # FIT_TILT_DEG / FIT_SHIFT is another level, not the floor
 MAX_RANGE = 3.0
 OBJECT_HEIGHT = (0.03, 0.14)      # m above the floor, the cluster's tallest point: the room's things are 7-12 cm
                                   # (room.KINDS); the picture's upper edge is 0.137 + 0.384 r m up at range r, so a
@@ -55,6 +65,7 @@ CRAB_SKIRT = 0.45                 # m round a crab-sized cluster: the small clus
 CRAB_HEIGHT = (0.14, 0.27)        # a crab's shell is 0.15-0.20 up; the kerb starts where a crab ends
 CRAB_DEPTH = 0.12                 # m front to back in the picture: a crab's legs spread, a thing's face does not
 KERB_MIN = 0.27                   # the kerb is 0.35 m tall: nothing else in the room reaches this
+KERB_WIDE_M = 0.45                # a cluster with its top cut is the kerb only if it is this wide too (a ball is not)
 CRAB_CUT_M = 0.17                 # nearer than this the other crab's shell (0.20 up) runs out of the picture's top
                                   # too; a cut cluster farther off is the kerb, nearer the map decides (`at_wall`)
 JAM_M = 0.24                      # the kerb at the nose: at least JAM_FRAC of the picture's zones (the crab's own
@@ -90,6 +101,8 @@ def ray_dirs() -> np.ndarray:
 
 
 FEET = ("LF_finger_tip_link", "RF_finger_tip_link", "LM_foot_tip_link", "RM_foot_tip_link", "LR_foot_tip_link", "RR_foot_tip_link")
+PLANE_SPREAD_M = 0.08             # the standing feet's second spread (m) for a plane through them to count...
+PLANE_TILT_MAX_DEG = 20.0         # ...and its tilt from the IMU's up at most this: a ramp is 12 deg
 STANCE_M = 0.03                   # a foot within this of the lowest foot (along the IMU's up) MAY stand on the floor
 LEG_SIDE_SCALE = 0.79             # the feet read a strafe 27% long (1.47 m for 1.16, probe_legodom, twice) where a walk
                                   # reads within 5%: the lateral gait's feet move through the body faster than the body
@@ -148,7 +161,16 @@ def _named(model, objtype, name: str, entity: str) -> int:
 
 
 class Sight:
-    def __init__(self, env, entity: str, yaw0: float = 0.0):
+    def __init__(self, env, entity: str, yaw0: float = 0.0, *, slopes: bool = False, round_tall: bool = False):
+        # `slopes` and `round_tall` are the obstacle course's two rules (2026-10-23), off by default
+        # so that the race's sweeper runs the sight it was measured with: with `slopes` a point's
+        # height is the lower of its heights above the horizontal plane and above the standing
+        # feet's plane (a ramp the crab is on is floor); with `round_tall` a cluster with its top
+        # out of the picture is the kerb only if it is wide as well (a 24 cm ball is not the wall)
+        self.slopes, self.round_tall = slopes, round_tall
+        self.kerb_min = KERB_MIN           # a cluster this tall is the kerb; the course lowers it on its platforms
+                                           # (the kerb stands 0.23 m above a 0.12 m platform, and read as a thing
+                                           # there, so the pose had no lateral fix across the whole pit stage)
         self.env = env
         self.entity = entity
         self.robot = env.scene[entity]
@@ -272,13 +294,45 @@ class Sight:
             return False
         r = self.tof.data.range[0].cpu().numpy().astype(np.float64)
         floor = float((self.d.xpos[self.own_bodies] @ up).min()) - FOOT_R
+        # the floor plane: through the standing feet when three or more stand well spread, so
+        # that a slope the crab is on is floor and not a thing (on the course's ramps the
+        # horizontal plane through the lowest foot had the ramp ahead, and the platform at its
+        # top, in the readout's thing colour, Andrew: "it sees the floor as an object colour");
+        # else the IMU's up through the lowest body point, as before
+        normal, offset = up, floor
+        if self.slopes and self.stance is not None and int(self.stance.sum()) >= 3:
+            fp = self.feet[self.stance]
+            c = fp.mean(axis=0)
+            _, sv, vt = np.linalg.svd(fp - c)
+            n = vt[2] if np.dot(vt[2], up) > 0 else -vt[2]
+            if sv[1] > PLANE_SPREAD_M and np.dot(n, up) > math.cos(math.radians(PLANE_TILT_MAX_DEG)):
+                normal, offset = n, float(np.dot(c, n)) - FOOT_R
+        self._floor_plane = (normal, offset)
         self_mask = self._self_mask()
         valid = r > 0
         pts = TOF_ORIGIN + r[:, None] * self.dirs
-        h = pts @ up - floor
-        obj = valid & ~self_mask & (h > FLOOR_CLEAR + FLOOR_SLOPE * r) & (r < MAX_RANGE) & (pts[:, 0] > 0.10)
+        # a point's height is the lower of its heights above the two planes: above the standing
+        # feet's plane alone, the ground beyond a ramp's foot read as a thing on the way DOWN (the
+        # slope's plane runs under it), as the slope ahead had on the way up above the horizontal
+        # one; a thing stands above both
+        h = np.minimum(pts @ up - floor, pts @ normal - offset)
+        band = FLOOR_CLEAR + FLOOR_SLOPE * r
+        obj = valid & ~self_mask & (h > band) & (r < MAX_RANGE) & (pts[:, 0] > 0.10)
+        hf = self._floor_fit(h, pts, r, valid & ~self_mask, band) if self.slopes else None
         self.frames += 1
         things, big, kerb, masks, jam = self._things(obj.reshape(ROWS, COLS), pts, h, int((valid & ~self_mask).sum()))
+        if hf is not None:
+            # what was found is drawn down to the floor found in the picture: each cluster's zones and
+            # the readout's masks grow into the zones above the fitted plane that continue them in depth.
+            # The finding itself stays on the IMU's band: deciding with the fitted floor (as `obj`)
+            # gave the forest's stall test and the pillar landmarks two to five calls a take where
+            # they had none (red211, red212, red213 at 1.6 and 3.0 m fits, 2026-10-23)
+            grow = valid & ~self_mask & (hf > FIT_CLEAR + FIT_SLOPE * r) & (r < MAX_RANGE) & (pts[:, 0] > 0.10) & ~obj
+            if grow.any():
+                xs = pts[:, 0]
+                for c in things + big:
+                    c["px"] = self._grow(c["px"], grow, xs)
+                masks = tuple(self._grow(m.ravel(), grow, xs) for m in masks)
         # the overlay's colours by a majority of the last three frames: a zone flickering
         # between thing and wall frame to frame reads as noise, and mostly is
         self._masks = (self._masks + [tuple(m.reshape(ROWS, COLS) for m in masks)])[-3:]
@@ -289,6 +343,53 @@ class Sight:
                      # for the readout: which zones are things, the kerb, the other crab
                      "thing_px": vote[0], "kerb_px": vote[1], "crab_px": vote[2]}
         return True
+
+    @staticmethod
+    def _grow(sel, grow, xs, iters: int = 8, step: float = 0.08):
+        """`sel` (flat zones) grown into `grow` through neighbours within `step` in depth."""
+        sel = sel.reshape(ROWS, COLS).copy()
+        g, x = grow.reshape(ROWS, COLS), xs.reshape(ROWS, COLS)
+        for _ in range(iters):
+            add = np.zeros_like(sel)
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    if dr == 0 and dc == 0:
+                        continue
+                    ss = np.roll(np.roll(sel, dr, 0), dc, 1)
+                    xx = np.roll(np.roll(x, dr, 0), dc, 1)
+                    if dr:
+                        ss[0 if dr > 0 else -1, :] = False
+                    if dc:
+                        ss[:, 0 if dc > 0 else -1] = False
+                    add |= ss & (np.abs(x - xx) < step)
+            add &= g & ~sel
+            if not add.any():
+                break
+            sel |= add
+        return sel.ravel()
+
+    @staticmethod
+    def _floor_fit(h, pts, r, seen, band):
+        """The floor found in the picture: a least-squares correction h ~ a x + b y + c over
+        the zones within FIT_RANGE that the IMU's plane calls floor, twice, the second time
+        without the zones the first left more than 1.5 cm off (a thing's foot, a step's
+        edge). Returns the heights above the fitted plane, or None when too few zones are
+        floor or the fit leans or shifts like another level."""
+        cand = seen & (r < FIT_RANGE) & (np.abs(h) < band) & (pts[:, 0] > 0.10)
+        if cand.sum() < 120:
+            return None
+        A = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(h))])
+        w = np.sqrt(np.clip(r, 0.3, None))[:, None]   # weighted by range: the near floor is most of the zones and
+        coef = None                                   # a short lever, and its 1 degree errors were 5 cm at 2.5 m
+        for _ in range(2):
+            coef, *_ = np.linalg.lstsq((A * w)[cand], (h * w[:, 0])[cand], rcond=None)
+            cand = cand & (np.abs(h - A @ coef) < 0.015)
+            if cand.sum() < 120:
+                return None
+        tilt = math.degrees(math.atan(math.hypot(coef[0], coef[1])))
+        if tilt > FIT_TILT_DEG or abs(coef[2]) > FIT_SHIFT:
+            return None
+        return h - A @ coef
 
     @staticmethod
     def _pile(sel: np.ndarray, pts: np.ndarray, width: float) -> list[np.ndarray]:
@@ -330,7 +431,8 @@ class Sight:
             near = float(p[:, 0].min())
             cx, cy = float(np.median(p[:, 0])), float(np.median(p[:, 1]))
             d = {"x": cx, "y": cy, "near": near, "height": top, "width": width, "n": int(sel.sum()), "edge": edge,
-                 "depth": float(np.ptp(p[:, 0])), "bearing": float(math.atan2(cy, cx)), "range": float(math.hypot(cx, cy))}
+                 "depth": float(np.ptp(p[:, 0])), "bearing": float(math.atan2(cy, cx)), "range": float(math.hypot(cx, cy)),
+                 "px": sel}                                       # its zones, flat: the readout tints what was picked
             return d, top_cut
 
         for k in range(1, n + 1):
@@ -346,8 +448,13 @@ class Sight:
                 # only the band inside the picture, 8-19 cm up at 15 cm, but runs out of the
                 # picture's top, which no thing does) or the other crab
                 big.append(d)
-                if (d["height"] >= KERB_MIN and sel.sum() >= 15) or \
-                        (top_cut and (near >= CRAB_CUT_M or (self.at_wall is not None and self.at_wall(cx, cy)))):
+                wide = (not self.round_tall) or d["edge"] or d["width"] > KERB_WIDE_M
+                if (d["height"] >= self.kerb_min and sel.sum() >= 15) or \
+                        (top_cut and wide and (near >= CRAB_CUT_M or (self.at_wall is not None and self.at_wall(cx, cy)))):
+                    # (wide as well: the course's ball, 0.24 m round, has its top cut from 0.3 m
+                    # and read as the kerb -- yellow in the readout, Andrew: "the ball ... is
+                    # always yellow" -- so the ball detector lost it just where the shove needed
+                    # it; the kerb spans the picture or the better part of a metre)
                     kerb.append(np.flatnonzero(sel))
                     kerb_px |= sel
                     d["kerb"] = True

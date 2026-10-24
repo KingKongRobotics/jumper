@@ -143,6 +143,20 @@ def main() -> None:
     objects = room.apply_race(env_cfg, seed=seed, senses=senses, n_objects=n_objects)
     env_cfg.scene.num_envs = res.num_envs
     agent_cfg = tasks.load_agent_cfg(spec.id)
+    # the seed is the whole take's, not only the layout's and the pilots' rolls: the environment's
+    # own randomness (its reset and its sensors' noise, from torch's generator) seeded too, a take
+    # runs the same way again, so a good one at 720p can be rendered again at 4K, the same take
+    # frame for frame -- as the obstacle course's COURSE_SEED (Andrew, 2026-10-23: "why didn't you
+    # think to have seeds before")
+    import random
+
+    import numpy as np
+    import torch
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if hasattr(env_cfg, "seed"):
+        env_cfg.seed = seed
     env = ManagerBasedRlEnv(cfg=env_cfg, device=res.device)
     skip_rewards(env)
     skip_the_managers(env)
