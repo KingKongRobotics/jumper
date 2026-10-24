@@ -237,6 +237,14 @@ EXPECT_M = 0.30                                            # a cluster within th
 PAIR_W = 0.22                                              # a sighting wider than this is two things in one cluster
 WALKS_M, WALKS_S = 0.30, 1.0                               # a memory that moves this far in this long walks: the other crab
                                                            # (a thing moves only under a nose)
+LM_N, LM_STILL_M = 30, 0.10                                # a memory seen this often and still within this over its trail is
+                                                           # settled: a landmark...
+LM_NEAR_M, LM_FAR_M = 0.40, 2.0                            # ...when sighted from this range (nearer it is under the nose and
+                                                           # about to move; farther a zone is 3.5 cm)
+LM_BLEND = 0.05                                            # a settled memory takes this much of a sighting (0.5 unsettled),
+                                                           # so the pose moves to it rather than it to the pose
+LM_GAIN, LM_STEP_M = 0.2, 0.02                             # of the landmarks' mean residual applied a frame, and no more than
+                                                           # this (1 m/s against 6 cm/s of slip)
 CLUSTER_M = 0.45                                           # things this near each other are a cluster: picked first, the
                                                            # most things for one walk (Andrew: "clusters of multiple objects
                                                            # first since they are highest value")
@@ -349,8 +357,9 @@ class Senses:
         self.mapper.decay_s = MAP_DECAY_S
         self.blocked = False                               # the other crab right ahead this frame
         self.jammed = False                                # the kerb at the nose
-        self.fixes = [0, 0, 0, 0, 0, 0]                    # fixes landed per wall (+x, -x, +y, -y), on a corner, on the
-                                                           # heading, for the log
+        self.fixes = [0, 0, 0, 0, 0, 0, 0]                 # fixes landed per wall (+x, -x, +y, -y), on a corner, on the
+                                                           # heading, on the things, for the log
+        self.wall_axes = (False, False)
         self.kerb_frames = 0                               # frames with kerb points at all
         self.foe_w = None                                  # where the other crab was last seen, world
 
@@ -359,6 +368,7 @@ class Senses:
         the frame, put in the world by the current pose, lands some way off the wall
         it belongs to, and the median of that per wall is how far the pose is off
         along that wall's normal. Applied at `WALL_GAIN` a frame."""
+        self.wall_axes = (False, False)                    # which of x, y a wall or a corner fixed this frame
         idx = self.sight.last["kerb"]
         if len(idx) < WALL_MIN_PTS:
             return
@@ -423,6 +433,7 @@ class Senses:
                     if abs(known - med_e) < CORNER_MAX_M:
                         (dy_terms if w < 2 else dx_terms).append((known - med_e, n_e))
                         self.fixes[4] += 1
+        self.wall_axes = (bool(dx_terms), bool(dy_terms))
         dx = sum(d * n for d, n in dx_terms) / sum(n for _, n in dx_terms) if dx_terms else 0.0
         dy = sum(d * n for d, n in dy_terms) / sum(n for _, n in dy_terms) if dy_terms else 0.0
         clip = lambda v: max(-WALL_STEP_M, min(WALL_STEP_M, WALL_GAIN * v))
@@ -537,11 +548,11 @@ class Senses:
                                                            # (things at x -2.00, the deepest of all, were picked and "not
                                                            # there"; one remembered at y -1.44, beyond the wall, was
                                                            # walked at, probe_fix13_chamfer)
-            sightings.append((wx, wy, d["width"]))
+            sightings.append((wx, wy, d["width"], d["range"]))
         # one memory per sighting and one sighting per memory, nearest pair first: two
         # sightings at a pile both landed on the one memory nearest them (probe_pile)
         pairs = sorted((math.hypot(th["x"] - wx, th["y"] - wy), i, name)
-                       for i, (wx, wy, _) in enumerate(sightings) for name, th in self.things.items())
+                       for i, (wx, wy, _, _) in enumerate(sightings) for name, th in self.things.items())
         matched = {}
         for dist, i, name in pairs:
             if dist >= MATCH_M:
@@ -549,8 +560,8 @@ class Senses:
             if i not in matched and name not in seen:
                 matched[i] = name
                 seen.add(name)
-        fresh_w = []
-        for i, (wx, wy, width) in enumerate(sightings):
+        fresh_w, anchors = [], []
+        for i, (wx, wy, width, rng) in enumerate(sightings):
             name = matched.get(i)
             if name is None:
                 if any(math.hypot(fx - wx, fy - wy) < MATCH_M for fx, fy in fresh_w):
@@ -562,10 +573,19 @@ class Senses:
                 fresh_w.append((wx, wy))
                 seen.add(name)
             th = self.things[name]
+            x1, y1, t1 = th["trail"][0]
+            settled = th["n"] >= LM_N and name != self.hold and math.hypot(th["x"] - x1, th["y"] - y1) < LM_STILL_M
+            if settled and width <= PAIR_W and LM_NEAR_M <= rng <= LM_FAR_M:
+                anchors.append((th["x"] - wx, th["y"] - wy))
             if width <= PAIR_W or th["n"] < PICK_SEEN_N:
                 # (a sighting wider than one thing is two of them in one cluster: it says the
                 # thing is there, not where, or it drags its memory toward the neighbour's)
-                th["x"], th["y"] = 0.5 * th["x"] + 0.5 * wx, 0.5 * th["y"] + 0.5 * wy
+                # A settled memory is an anchor and holds its place against the sightings,
+                # except along an axis a wall fixed this frame, where the wall knows better
+                # and the memory follows the pose
+                kx = 0.5 if not settled or self.wall_axes[0] else LM_BLEND
+                ky = 0.5 if not settled or self.wall_axes[1] else LM_BLEND
+                th["x"], th["y"] = (1 - kx) * th["x"] + kx * wx, (1 - ky) * th["y"] + ky * wy
             th["seen"], th["n"] = t, th["n"] + 1
             if t - th["trail"][-1][2] >= WALKS_S / 2:
                 th["trail"] = [q for q in th["trail"] if t - q[2] <= WALKS_S] + [(th["x"], th["y"], t)]
@@ -579,10 +599,20 @@ class Senses:
                 self.walked.append((th["x"], th["y"], t))
                 del self.things[name]
                 seen.discard(name)
+        if anchors:
+            # The things as landmarks: a settled memory seen again says where the pose is,
+            # along whatever axis no wall fixed this frame. A shove along a side wall away
+            # from its corner has no kerb fix on x, and the legs slip under load, 0.3 m in
+            # 5 s (blue, day33b); the things ahead on the floor were seen all the while.
+            rx = sum(a for a, _ in anchors) / len(anchors)
+            ry = sum(b for _, b in anchors) / len(anchors)
+            clip = lambda v: max(-LM_STEP_M, min(LM_STEP_M, LM_GAIN * v))
+            self.mapper.shift(0.0 if self.wall_axes[0] else clip(rx), 0.0 if self.wall_axes[1] else clip(ry))
+            self.fixes[6] += 1
         crabs = [c for c in self.sight.last["big"] if is_crab(c) and not c.get("kerb")]
         for name in list(self.things):
             th = self.things[name]
-            if name in seen or any(math.hypot(th["x"] - wx, th["y"] - wy) < EXPECT_M for wx, wy, _ in sightings):
+            if name in seen or any(math.hypot(th["x"] - wx, th["y"] - wy) < EXPECT_M for wx, wy, _, _ in sightings):
                 # seen, or a sighting is near enough to be it and went to a neighbour: two
                 # things touching come out as one cluster some frames (0.21 wide at 2.5 m,
                 # probe_pile2), and with one sighting a frame the other memory starved and
@@ -1180,10 +1210,10 @@ def make_pilot(env, player, side):
             fx = eyes.fixes
             print(f"\n[{label}] {t:6.2f}s  map pose off by ({ex:+.2f}, {ey:+.2f}) m, {math.degrees(eyaw):+.0f} deg; "
                   f"{len(eyes.things)} things remembered; kerb in {eyes.kerb_frames} frames, fixes +x {fx[0]} -x {fx[1]} "
-                  f"+y {fx[2]} -y {fx[3]} corner {fx[4]} heading {fx[5]}; {eyes.once} seen once and forgotten"
+                  f"+y {fx[2]} -y {fx[3]} corner {fx[4]} heading {fx[5]} things {fx[6]}; {eyes.once} seen once and forgotten"
                   + (", stalled" if eyes.mapper.stalled else "") + (", blocked" if eyes.blocked else "")
                   + (", jammed" if eyes.jammed else ""))
-            eyes.fixes = [0, 0, 0, 0, 0, 0]
+            eyes.fixes = [0, 0, 0, 0, 0, 0, 0]
             eyes.kerb_frames = 0
         frame = _pilot(t)
         st["frame"] = frame

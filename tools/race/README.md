@@ -234,8 +234,23 @@ blue's heading ran away to -104 degrees in 40 s, its pose 1.7 m off, red
 within 0.1 degrees in three (probe_xfix: corner fixes 30-100 a second
 whenever a chamfer is in the picture; a 0.8 m, 10 degree knock closes the
 same way), and a 0.16 m drift during a shove beside the wall was pulled
-back within the shove. Still open: no chamfer in the
-picture, no x fix -- a side wall seen square-on from the middle of the room.
+back within the shove. With no chamfer in the picture there is still no
+kerb fix along the wall: a shove from the back row along a side wall toward
+the line has the corner behind it and the end wall out of range, and blue
+slipped 0.3 m in 5 s on one (day33b). For that the things are landmarks: a
+memory seen 30 times and still within 0.10 m over its last second is
+settled, and a sighting of it from 0.4-2.0 m says where the pose is. The
+mean residual over the settled things in view moves the pose at 0.2 a
+frame, 2 cm at most, along whichever axis no wall or corner fixed this
+frame; a settled memory takes a twentieth of each sighting rather than
+half, so the pose moves to it rather than it to the pose, except along an
+axis a wall fixed, where the wall knows better and the memory follows. The
+things ahead on the floor are in view through a shove toward the line. On
+the staged shove (probe_lm2: the puck at the back row by the +y wall, two
+things on red's half ahead) the committed code slips 0.66 m in x over the
+5 s of the shove, with the +y wall fixing y 50 times a second and nothing
+fixing x (probe_lm_base2); with the landmarks, 20-47 a second through the
+shove, the pose stays within 5 cm (probe_lm2).
 
 The map's cells decay toward unknown with a 6 s half-life, the known kerb
 re-asserted, so a thing shoved away leaves no obstacle for the planner to route
@@ -479,6 +494,8 @@ would work needs something it can take: a 5 cm prize object, or a handle.
 | day32, day32b (seed 5, the corner fix and an unbounded heading fix) | sensed | 120 s | blue 7-5, red 12-0 | 58, 42 | the heading fix at 0.3 of the slant and 0.5 degrees a frame with no bound ran away: headings +41 and -104 degrees, blue's pose 1.7 m off, both runs discarded (see Localisation) |
 | day33 (seed 5, the corner fix, the heading fix bounded, the film take) | sensed | 120 s | blue 9-3 | 84 | 23 shoves, 24 give-ups: 9 "other crab", 9 "not there", 3 with no standing point, 3 circled; picks: 27 clusters, 8 back row, 15 nearest; poses means 6 and 6 cm, worst 0.21 and 0.30, headings within 4 degrees all race |
 | day33b (seed 5, the same code) | sensed | 120 s | red 8-4 | 88 | 25 shoves, 34 give-ups: 18 "other crab", 9 "not there", 4 with no standing point; poses means 2 and 7 cm, worst 0.11 (red, the best of any run) and 0.45, headings within 2 degrees; 9700 corner fixes and 7800 heading fixes landed |
+| day34b (seed 5, the things as landmarks) | sensed | 120 s | blue 9-2 | 90 | 25 shoves, 24 give-ups: 16 "other crab", 5 "not there", 3 with no standing point; picks: 22 clusters, 12 back row, 16 nearest; poses means 2 and 3 cm, worst 0.19 and 0.19 -- neither crab over 0.2 m at any check, the first run of that; headings within 2 degrees; 5800 landmark fixes landed beside 10400 corner and 9000 heading |
+| day34 (seed 5, the things as landmarks, the film take) | sensed | 120 s | red 8-4 | 80 | 25 shoves, 25 give-ups: 15 "other crab", 8 "not there", 1 with no standing point; picks: 13 clusters, 11 back row, 26 nearest; poses means 3 and 3 cm, worst 0.20 and 0.17, headings within 1 degree |
 
 Objects shoved deep into a half end up against the far kerb, where the other
 crab can only get beside them, not behind: the slanting approaches handle it
