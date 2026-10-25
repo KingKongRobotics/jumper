@@ -166,7 +166,7 @@ def main() -> None:
     parser.add_argument("--red-aggression", type=float, default=None, help="0 defends, 1 charges in (pilots that roll); "
                         "the style's unless given")
     parser.add_argument("--blue-aggression", type=float, default=None)
-    parser.add_argument("--seed", type=int, default=None, help="the pilots' rolls; printed, and a match replays from it")
+    parser.add_argument("--seed", type=int, default=None, help="the whole take's: the pilots' rolls and the env's; printed, and a match replays from it")
     parser.add_argument("--no-moves", action="store_true", help="no taunt, cheer or victory dance (plumbing takes)")
     parser.add_argument("--best-of", type=int, default=3)
     parser.add_argument("--linger", type=float, default=3.0, help="seconds a fall plays out (and the winner walks back to the middle) before the cheer")
@@ -234,6 +234,19 @@ def main() -> None:
     apply_arena(env_cfg, senses=senses, dressed=not args.bare)
     env_cfg.scene.num_envs = res.num_envs
     agent_cfg = tasks.load_agent_cfg(spec.id)
+    # the seed is the whole take's, not only the pilots' rolls: the environment's own randomness
+    # (its reset and its sensors' noise, from torch's generator) seeded too, so a take runs the same
+    # way again and a good one at 720p can be rendered again at 4K -- as the race's --seed and the
+    # obstacle course's COURSE_SEED (Andrew, 2026-10-23: "why didn't you think to have seeds before")
+    import random
+
+    import numpy as np
+    import torch
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if hasattr(env_cfg, "seed"):
+        env_cfg.seed = seed
     env = ManagerBasedRlEnv(cfg=env_cfg, device=res.device)
     skip_rewards(env)
     skip_the_managers(env)
@@ -267,8 +280,8 @@ def main() -> None:
             if args.video is not None:
                 from mjrl.viewer.video import ReplayVideo
 
-                hud = Hud([(name, getattr(args, f"{name}_style"), pads[name], player, made.get(name))
-                           for name, player in zip(("red", "blue"), players)], referee)
+                hud = Hud([(name, getattr(args, f"{name}_style"), pads[name], player, made.get(name), entity)
+                           for name, player, entity in zip(("red", "blue"), players, (RED, BLUE))], referee, env)
                 record = (lambda path, **kw: ReplayVideo(env, path, **kw)) if args.no_hud else \
                     (lambda path, **kw: HudVideo(env, path, hud=hud, **kw))
                 videos.append(record(args.video, fps=args.video_fps, width=args.video_width,

@@ -27,7 +27,7 @@ MUJOCO_GL=glfw .venv/bin/python tools/battle/duel.py --scene beach --headless --
 | `referee.py` | who lost (flipped onto its head or back, off the plank and on the sand, or down and out on its side), the score, the set pieces it cues around each round, the linger before the reset |
 | `moves.py` | each colour's taunt, cheer and victory dance by the bundle's mode names, the pad press that enters each read from the app's own FSM table, and the `Performer` that plays one |
 | `duel.py` | the driver: builds the world, runs two `AppPlayer`s from one app, hands each a virtual pad with its pilot, loops with the referee, records |
-| `hud.py` | the control readout painted into the take as it is recorded: each crab's pad in its corner (red bottom left, blue bottom right -- sticks, triggers, hat, buttons), its mode and intent, the score across the top; `--no-hud` leaves it off |
+| `hud.py` | the control readout painted into the take as it is recorded: each crab's panel in its corner (red bottom left, blue bottom right -- sticks, triggers, hat, buttons, and its joints grouped by leg), its mode and intent, the score large at the top centre; sized in 720p pixels and scaled with the frame; `--no-hud` leaves it off |
 | `eyes.py` | one crab's senses -- the dToF image self-masked and clustered, the IMU, the encoders -- and the other crab found in it |
 | `pilots/brain.py` | the default: rolls an intent (charge, brace, dodge, back off, circle, recentre, and its style's own) from weights set by its aggression, seeded per crab; keeps its crab on the table before anything else; plays the referee's cues, facing the camera |
 | `register_gestures.py` | adds the three gestures to `deploy/manifests.json` (Menu + X / Y / A) and `deploy/jumper.controller.toml`, once trained and exported; then `scripts/deploy.py --bundle out/bundle_example --allow-incomplete` rebuilds the app |
@@ -91,7 +91,16 @@ nine times in ten; at 0 it braces, dodges and backs off and charges only when
 the foe is already on it. Each crab has its own generator seeded from
 `--seed` (red `seed`, blue `seed + 1`), the seed is printed, and every decision
 is logged with the roll and the weights, so a take replays move for move and
-a dull one is re-rolled rather than re-cut. Every strafe and the back-off stop
+a dull one is re-rolled rather than re-cut. Since 2026-10-24 the seed is the whole
+take's: `random`, numpy, torch and the env config are seeded before the env
+is built (the reset and the sensors' noise, from torch's generator, were
+unseeded before), as the race's
+`--seed`; a take found at 720p renders again at 4K. That holds on the CPU
+backend (`--backend native --device cpu`, about 170 steps/s with the readout,
+3.5x warp's 48 on this machine): two seed-1 takes printed the same log line for
+line. On warp the same seed split at 14.2 s (a sidestep left in one, right in
+the other, from a rim margin 0.22 m against 0.19 m), the GPU's contact sums not
+being bit-for-bit repeatable. Every strafe and the back-off stop
 at the plank's edge: on the 0.7 m plank a circle at full stick from the mark
 walked straight off the side in 0.7 s.
 
@@ -153,6 +162,17 @@ written (`HudVideo` over `mjrl.viewer.video.ReplayVideo`), with the mode the
 controller is in, the intent the brain is on (and its stage, or the lock), and
 the score and the round across the top. One file, one pass; the fetch film's
 overlay was PNGs composed afterwards.
+
+For the 4K take (Andrew, 2026-10-24: "just the control surfaces and joints.
+Red on the bottom left and blue on the bottom right. Like you find in the hud1
+attempt ... make sure the score is nice and visible as well in the top
+center") each panel gained the legs' joints -- one bar a joint, its deviation
+from the standing pose, 0.6 rad filling it, grouped LF RF LM RM LR RR, the
+front legs' two extra bars being the claw arm -- and the score is 54 px type
+in the crabs' colours with `best of N` and the round under it. Every size is
+in 720p pixels times the frame's height over 720: hud1's fixed pixels were a
+third the size at 4K. `python tools/battle/hud.py out.png 2160` draws the
+layout on a grey frame without a take.
 
 And: "I don't see the robots using all their moves... the red crab was a
 little over the top of the blue crab, it would be interesting to see what
