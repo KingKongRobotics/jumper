@@ -59,6 +59,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 from scipy.spatial import cKDTree
+from scipy.spatial.distance import cdist
 
 from tasks.jumper.common.constants import HOME, STAND_Z
 from tasks.jumper.five_foot.claw import (
@@ -224,23 +225,51 @@ def profile(model: mujoco.MjModel,
                                         MOVING_JAW[0])]
     moving = jaw_cloud(model, data, MOVING_JAW)
     fixed = jaw_cloud(model, data, FIXED_JAW)
-    drawn = cKDTree(np.vstack([moving, fixed]))
+    # Preserve the tree's rejection of non-finite mesh coordinates.
+    if not np.isfinite(moving).all() or not np.isfinite(fixed).all():
+        cKDTree(np.vstack([moving, fixed]))
     geoms = _claw_geoms(model)
 
-    far = np.linalg.norm(moving - hinge, axis=1)
-    moving, far = moving[far > KNUCKLE_CLEAR], far[far > KNUCKLE_CLEAR]
-    across = cKDTree(fixed[np.linalg.norm(fixed - hinge, axis=1) > KNUCKLE_CLEAR])
-    gap, partner = across.query(moving)
-
-    out = []
+    far = cdist(moving, hinge[None, :]).ravel()
+    outside = far > KNUCKLE_CLEAR
+    fixed_outside = fixed[cdist(fixed, hinge[None, :]).ravel() > KNUCKLE_CLEAR]
+    across = cKDTree(fixed_outside, leafsize=64,
+                     compact_nodes=False, balanced_tree=False)
+    bands = []
     for lo in BANDS:
-        band = (far >= lo) & (far < lo + BAND)
-        if not band.any():
-            continue
-        k = int(np.nonzero(band)[0][gap[band].argmin()])
-        centre = 0.5 * (moving[k] + across.data[partner[k]])
-        out.append((float(lo), float(gap[k]), float(drawn.query(centre)[0]),
-                    room(model, data, centre, geoms)))
+        indices = np.flatnonzero(outside & (far >= lo) & (far < lo + BAND))
+        if indices.size:
+            bands.append((lo, indices))
+    if not bands:
+        return []
+    centres = []
+    original_across = None
+    minima = []
+    for lo, band_indices in bands:
+        points = moving[band_indices]
+        # A measured pair bounds the band's minimum without approximating it.
+        bound = across.query(points[::max(1, len(points) // 32)])[0].min()
+        gap, partner = across.query(points, distance_upper_bound=np.nextafter(bound, np.inf))
+        if not np.isfinite(gap).any():
+            # A zero/subnormal bound can underflow when the tree squares it.
+            gap, partner = across.query(points)
+        k = int(gap.argmin())
+        point = points[k]
+        nearest = partner[k]
+        nearest_distances = across.query(point, k=2)[0]
+        if nearest_distances[0] == nearest_distances[1]:
+            if original_across is None:
+                original_across = cKDTree(fixed_outside)
+            nearest = original_across.query(point)[1]
+        centre = 0.5 * (point + across.data[nearest])
+        centres.append(centre)
+        minima.append((float(lo), float(gap[k])))
+    # There are only a few centres; scan in C instead of building another tree.
+    distances = np.sqrt(np.minimum(cdist(centres, moving, "sqeuclidean").min(axis=1),
+                                   cdist(centres, fixed, "sqeuclidean").min(axis=1)))
+    out = []
+    for (lo, gap), centre, distance in zip(minima, centres, distances):
+        out.append((lo, gap, float(distance), room(model, data, centre, geoms)))
     return out
 
 
