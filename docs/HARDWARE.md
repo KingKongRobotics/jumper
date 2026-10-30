@@ -14,7 +14,7 @@
 | Computing | NPU | 6 TOPS (INT8) |
 | Computing | Memory | 4 GB |
 | Computing | Storage | 64 GB |
-| Motion | Joints | 22 [tactile servos](https://kingkong.tech/servo) |
+| Motion | Joints | 22 [tactile servos](https://shop.kingkong.tech/products/tactile-servo/buy) |
 | Sensing | IMU | 6-axis: 3-axis accelerometer + 3-axis gyroscope |
 | Sensing | Depth sensor | dToF, 54 × 42 array; 2,268 ranging points per frame; configuration reference: [ST VL53L9CX](https://www.st.com/en/imaging-and-photonics-solutions/vl53l9cx.html) |
 | Sensing | Depth field of view | 55° horizontal × 42° vertical; 71° diagonal |
