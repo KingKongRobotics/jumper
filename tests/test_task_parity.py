@@ -60,6 +60,9 @@ NOT_LOCOMOTION = {
     "jumper.dance_dream_wings",
     "jumper.dance_maze",
     "jumper.dance_waist",
+    # jumper.dance's clip raised onto a taller stance by `tools/raise_dance.py`;
+    # every number is jumper.dance's.
+    "jumper.dance_tall",
     # One-shot gestures on the same machinery, each with a clip of its own, imported
     # from rl-wbc-fsm.
     "jumper.gesture_bow",
