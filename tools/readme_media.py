@@ -156,6 +156,15 @@ CLIPS: dict[str, Clip] = {
                  camera=Camera(distance=0.85, height=0.17)),
     "dance": Clip("jumper.dance_brazilian", skip=6.0, seconds=5.0,
                   camera=Camera(follow=False)),
+    # The tall variants written by `tools/raise_dance.py`. maze's clip is 10 s long.
+    "dance_tall": Clip("jumper.dance_tall", skip=6.0, seconds=5.0,
+                       camera=Camera(follow=False)),
+    "maze_tall": Clip("jumper.dance_maze_tall", skip=4.0, seconds=5.0,
+                      camera=Camera(follow=False)),
+    "waist_tall": Clip("jumper.dance_waist_tall", skip=6.0, seconds=5.0,
+                       camera=Camera(follow=False)),
+    "dream_wings_tall": Clip("jumper.dance_dream_wings_tall", skip=6.0, seconds=5.0,
+                             camera=Camera(follow=False)),
     # From the side of the arm that waves; from the other, the body is in the way.
     "gesture": Clip("jumper.gesture_hello", skip=0.0, seconds=None,
                     camera=Camera(azimuth=205.0, follow=False)),
