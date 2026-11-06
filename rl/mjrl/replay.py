@@ -38,6 +38,7 @@ import copy
 import importlib.util
 import json
 import math
+import sys
 from functools import partial
 from pathlib import Path
 
@@ -66,7 +67,14 @@ def load_command_script(spec: str):
     if loader is None or loader.loader is None:
         raise ValueError(f"{file} is not a Python file")
     module = importlib.util.module_from_spec(loader)
-    loader.loader.exec_module(module)
+    # Registered before it runs, as `import` does: `dataclasses` resolves a string
+    # annotation through `sys.modules[cls.__module__]`.
+    sys.modules[loader.name] = module
+    try:
+        loader.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(loader.name, None)
+        raise
     script = getattr(module, name, None)
     if not callable(script):
         raise TypeError(f"{file} defines no callable {name!r}")

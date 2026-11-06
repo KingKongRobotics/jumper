@@ -418,3 +418,18 @@ def test_velocity_play_preserves_default_and_accepts_opt_in_cli(
     monkeypatch.setattr(sys, "argv", ["play.py", "--dry-run", *arguments])
     velocity_play_entrypoint.main()
     assert "--dry-run, stopping here" in capsys.readouterr().out
+
+
+def test_command_scripts_load_from_a_file_that_defines_dataclasses():
+    """`play.py --command-script` loads `tools/readme_media.py`, which defines
+    dataclasses under `from __future__ import annotations`. `dataclasses` looks the
+    defining module up in `sys.modules` to resolve a string annotation, so a module
+    executed before it is registered there fails at its first `@dataclass`, and so
+    did every scripted clip in that file."""
+    from pathlib import Path
+
+    from mjrl.replay import load_command_script
+
+    tool = Path(__file__).resolve().parents[1] / "tools" / "readme_media.py"
+    for name in ("walk", "pose", "claw"):
+        assert callable(load_command_script(f"{tool}:{name}"))

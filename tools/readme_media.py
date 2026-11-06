@@ -145,10 +145,18 @@ def pose(t: float) -> dict:
     }
 
 
+def walk_tall(t: float) -> dict:
+    """jumper.posture_tall raised to 0.18 m, then walking forward at 0.3 m/s."""
+    return {"twist": (0.3 * _ramp(t, 1.4, 2.4), 0.0, 0.0),
+            "posture": (0.0, 0.0, 0.0, (0.18, _ramp(t, 0.2, 1.2)))}
+
+
 CLIPS: dict[str, Clip] = {
     "walk": Clip("jumper.posture", skip=1.0, seconds=4.0, script="walk"),
     "posture": Clip("jumper.posture", skip=1.0, seconds=6.0,
                     camera=Camera(follow=False), script="pose"),
+    # The 0.18 m command that jumper.posture is not trained for, which posture_tall is.
+    "walk_tall": Clip("jumper.posture_tall", skip=0.6, seconds=5.0, script="walk_tall"),
     "claw": Clip("jumper.five_foot", skip=1.0, seconds=4.0, script="claw"),
     # Followed over the ground and not in height, so the jump is the robot
     # leaving the floor and not the floor leaving the picture.

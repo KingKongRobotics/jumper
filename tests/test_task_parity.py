@@ -93,6 +93,10 @@ NOT_LOCOMOTION = {
     # listing them as exemptions would empty the parity test rather than
     # describe it.
     "jumper.posture",
+    # `jumper.posture` with the height range raised, the height draw biased high
+    # and two more height terms. Its control is `jumper.posture`, not the four, for
+    # the same reasons that task gives.
+    "jumper.posture_tall",
 }
 
 #: Fields a task is allowed to differ on because **the gait fixes them**.
