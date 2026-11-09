@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:6c35e964fc575f2d -->
+<!-- tracks: README.md @ sha256:390d13e3389356a5 -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -11,6 +11,42 @@
 本仓库是跳跳的外观、动作与场景创作 AI 工具集。在 AI 编程助手中打开本仓库，试试下面的提示词。
 
 > 🦀 **免费获得跳跳！** [了解如何领取 →](https://beunlimited.me/zh/events/crab-robot-challenge-2026)
+
+## 本分支：跳跳写地书
+
+![跳跳用毛笔在地上写自己的名字“跳跳”和“你好”（俯视）](docs/media/calligraphy-wu.gif)
+
+在中国的公园里，人们用蘸水的长杆毛笔在石板地上写字——这就是地书，字迹干了便消失。
+本分支在仿真中教跳跳做同样的事：它用钳子夹住毛笔，按笔顺一笔一笔写出自己的名字 **跳跳**，
+再写 **你好**——然后走到一旁看着字，放下毛笔，跳一跳，再绕着字跑圈，石面上的水迹一边渐渐干去，
+最后向石板鞠一躬。
+
+- **笔画**来自 [Make Me a Hanzi](https://github.com/skishore/makemeahanzi)：
+  取每一笔的中线，平滑后按比例铺到地面上，并带有压力曲线——起笔下压，收笔渐提。
+- **每一笔都由手臂一气呵成，机身保持不动**，就像人在纸上写字：机器人在笔画之间收起手臂行走，
+  到位后展开手臂；毛笔夹在合拢的钳子里，黑色笔头与笔杆同宽、收成笔锋，下压时会没入石面，笔画随之变粗。
+  手臂按机身的实际位置用逆运动学驱动。
+- **手臂写字时，腿像雕塑一样不动。**行走用跳跳的五足步态（`jumper.five_foot`）；
+  一停下，它给腿的最后一条指令就保持住，直到手臂再次收起，所以手臂伸出时脚不会在地上蹭动。
+- **实测**（影片所用的那次运行）：“跳跳 你好”每字 12.0 厘米，共 39 笔；墨迹离笔画中线
+  0.9 毫米（中位数，p95 为 2.5 毫米），有两笔分两段写成；钳子始终离地 5 毫米以上。
+  同一版本的另一次运行中：笔头没入石面约为其长度的四分之一（中位数；最多一半），
+  写一笔时机身移动 0.2 毫米，脚始终离墨迹 6 厘米以上——机器人总站在所写之字的右侧，
+  而这一行从左往右写。有一次在靠近机身处收笔时，钳子贴到机身正面约半秒。
+
+动手试试——无需训练，写字也不需要 GPU：
+
+```bash
+git clone -b calligraphy https://github.com/AgusBM/jumper && cd jumper
+python -m venv .venv && source .venv/bin/activate && pip install -e .
+python tasks/jumper/calligraphy/tools/write.py --text "跳跳 你好" --layout horizontal   # 4 核 CPU 约 40 分钟
+python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u8df3-u8df3_u4f60-u597d/<run>
+```
+
+`render.py` 会在该次运行的目录里生成 `film.mp4` 和 `result.png`（Linux 上有 NVIDIA GPU 时，
+设 `MUJOCO_GL=egl` 会快得多）。其他汉字、各项选项，以及规划器、控制器、
+渲染和供后期描墨的笔画数据，都在
+[`tasks/jumper/calligraphy/`](tasks/jumper/calligraphy/README.md)。
 
 ## 一句话，设计外观
 

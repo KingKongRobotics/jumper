@@ -1,0 +1,708 @@
+#!/usr/bin/env python3
+"""Step 4: the shots of a `write.py` run, and the ink for the compositor.
+
+    MUJOCO_GL=osmesa python tasks/jumper/calligraphy/tools/render.py logs/calligraphy/u65e0/<run>
+    MUJOCO_GL=osmesa python tasks/jumper/calligraphy/tools/render.py <run> --check
+    MUJOCO_GL=osmesa python tasks/jumper/calligraphy/tools/render.py <run> --no-ink --shots low
+
+Writes into the run's directory:
+
+    film.mp4            real time, the camera following the character being written,
+                        then pulling back to the whole text and the robot beside it
+                        (its outro), holding on it, and the water drying off the
+                        stone as 地书 does (--no-dry ends on the ink) -- the shot
+                        for a video
+    top.mp4, low.mp4    the overhead and the low shot, fixed, real time, ink drawn as it
+                        is laid (--no-ink for clean plates to composite onto)
+    jump.mp4            the brush put down and the jump (write.py's run finale), low
+                        and close, at 50 fps to be slowed down; from
+                        `outro.put - JUMP_PAD[0]` of the others' clock
+    result.png          the finished text from above, 1920 x 1080: a thumbnail
+    wu.gif              the overhead shot sped up, small, for the README
+    ink.json            every mark: time, floor xy, depth, planned press, width, and its
+                        pixels in each shot; the shots' intrinsics and poses
+    ink.svg             the ink from above at the character's scale
+
+**Plain MuJoCo, no mjlab, no torch.** The run's `model.mjb` and the `qpos` in its
+`log.npz` are the whole state, replayed with `mj_forward`; nothing is simulated
+again. That is also what makes it run on a machine with no GPU: OSMesa renders on
+the CPU, and it crashes the process when torch is loaded beside it (measured on
+this container, 2026-10-08: `import mujoco; import torch; import tensordict` under
+MUJOCO_GL=osmesa dies; under egl it does not), so the renderer must not share a
+process with the simulation.
+
+`--check` puts markers at known floor points, renders them from each shot and
+measures where they land against `cameras.Shot.project` -- the export's pixels
+are only worth anything if that agrees.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import json
+import math
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+
+# OSMesa by default on Linux, so a machine without a GPU renders; macOS and Windows
+# have their own GL and no OSMesa.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("MUJOCO_GL", "osmesa")
+
+import mujoco
+
+from tasks.jumper.calligraphy import cameras, hanzi, ink
+
+#: The paving: light stone slabs with darker joints.
+STONE = np.array([0.60, 0.58, 0.55])
+JOINT = np.array([0.42, 0.40, 0.38])
+#: 地书 is water on stone: the ink is the stone darkened, not black -- deepest where
+#: the water stands, paler at the rim where it thins out, with a wet sheen.
+WET = (*(STONE * 0.42), 1.0)
+WET_RIM = (*(STONE * 0.70), 1.0)
+RIM = 0.0008                      # m, how far the paler rim reaches past the wet patch
+WET_SPECULAR = 0.35
+#: The film ends with the water drying off the stone, as 地书 does: every patch
+#: shrinks from its edge at about the same pace, so the thin strokes go first and
+#: the heads last, a little unevenly over the floor (`--no-dry` keeps the ink).
+DRY_S = 6.0                       # s, after FILM_HOLD
+DRY_HOLD = 1.5                    # s on the dry floor
+HAZE = (0.86, 0.87, 0.88, 1.0)
+
+
+def sky_horizon(m: mujoco.MjModel) -> np.ndarray | None:
+    """The colour at the horizon of the model's skybox, or None if it has none: the
+    middle row of the cube's first side face."""
+    for tex in range(m.ntex):
+        if m.tex_type[tex] == mujoco.mjtTexture.mjTEXTURE_SKYBOX:
+            w, h, c = m.tex_width[tex], m.tex_height[tex], m.tex_nchannel[tex]
+            img = m.tex_data[m.tex_adr[tex]: m.tex_adr[tex] + w * h * c].reshape(h, w, c)
+            return img[w // 2, :, :3].mean(axis=0) / 255.0
+    return None
+
+
+def dress(m: mujoco.MjModel) -> None:
+    """The training floor -- blue, chequered, reflective -- as paving stones.
+
+    Only what is drawn changes: the texture's pixels, the material's reflectance and
+    the fog. Contact, friction and geometry are the run's, untouched.
+    """
+    g = m.geom("terrain").id
+    mat = m.geom_matid[g]
+    tex = m.mat_texid[mat][1]  # mjTEXROLE_RGB
+    w, h, c = m.tex_width[tex], m.tex_height[tex], m.tex_nchannel[tex]
+    rng = np.random.default_rng(7)
+    yy, xx = np.mgrid[0:h, 0:w]
+    slabs = 2  # per texture repeat
+    sx, sy = (xx * slabs) // w, (yy * slabs) // h
+    tint = 1.0 + 0.05 * rng.standard_normal((slabs, slabs))
+    img = STONE[None, None, :] * tint[sy, sx][..., None]
+    img *= 1.0 + 0.025 * rng.standard_normal((h, w))[..., None]
+    joint = ((xx % (w // slabs)) < 3) | ((yy % (h // slabs)) < 3)
+    img[joint] = JOINT
+    data = (np.clip(img, 0, 1) * 255).astype(np.uint8)[..., :c]
+    adr = m.tex_adr[tex]
+    m.tex_data[adr: adr + w * h * c] = data.ravel()
+    m.mat_rgba[mat] = (1.0, 1.0, 1.0, 1.0)
+    m.mat_reflectance[mat] = 0.0
+    # Haze, or with a sky (write.py --scene) the sky's own horizon, so the floor
+    # fades into it rather than into grey.
+    horizon = sky_horizon(m)
+    m.vis.rgba.fog = HAZE if horizon is None else (*horizon, 1.0)
+    m.vis.map.fogstart = 1.0
+    m.vis.map.fogend = 3.5
+    # The scene's light is a spot 1.5 m up; from the low camera the edge of its
+    # shadow map lies on the floor as dark wedges along the horizon. A low sun
+    # from the side shades the same and casts shadows the whole floor agrees on.
+    sun = np.array([0.35, -0.25, -1.0])
+    sun /= np.linalg.norm(sun)
+    m.light_type[0] = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
+    m.light_dir[0] = sun
+    # A directional light's shadow map is a box along its ray from its position:
+    # the ray has to pass where the robot is. The daylight scene's sun stands at
+    # (-3, -2, 4), and turned to this direction its shadows fell 3 m away.
+    m.light_pos[0] = np.array([0.3, 0.0, 0.0]) - 2.5 * sun
+    if horizon is None:
+        m.vis.headlight.ambient = (0.35, 0.35, 0.35)
+        m.vis.headlight.diffuse = (0.40, 0.40, 0.40)
+    else:
+        # The scene's sun is brighter and bluer-lit than the training light;
+        # at the values above the floor washed out to white.
+        m.light_ambient[0] = (0.10, 0.11, 0.13)
+        m.light_diffuse[0] = (0.70, 0.68, 0.64)
+        m.vis.headlight.ambient = (0.30, 0.30, 0.30)
+        m.vis.headlight.diffuse = (0.30, 0.30, 0.30)
+
+
+def _add_disc(scene, x: float, y: float, r: float, rgba, z: float = ink.LIFT,
+              specular: float = 0.0) -> bool:
+    """A flat patch: an ellipsoid r x r x 0.3 mm, so it has no hard edge."""
+    if scene.ngeom >= scene.maxgeom:
+        return False
+    g = scene.geoms[scene.ngeom]
+    mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_ELLIPSOID, np.array([r, r, 0.0003]),
+                        np.array([x, y, z]), np.eye(3).ravel(),
+                        np.asarray(rgba, dtype=np.float32))
+    g.specular = specular
+    g.shininess = 0.6
+    scene.ngeom += 1
+    return True
+
+
+def _add_ink(scene, pts: np.ndarray, dry: float = 0.0) -> None:
+    """The ink laid so far, rows of t, x, y, radius: a pale rim under each wet
+    patch, the patch 0.1 mm above it. `dry`, 0 to 1, is how far the water has
+    dried off: each patch shrinks from its edge and pales, by about the same amount
+    everywhere, so at 1 nothing is left."""
+    if not len(pts) or dry >= 1.0:
+        return
+    x, y, r = pts[:, 1], pts[:, 2], pts[:, 3]
+    core = np.asarray(WET)
+    if dry > 0.0:
+        # Patches 2-3 cm across that dry up to a quarter faster or slower.
+        patchy = (0.6 * np.sin(x / 0.004 + 1.3) * np.sin(y / 0.005 + 0.7)
+                  + 0.4 * np.sin((x + y) / 0.0027))
+        # Paling first, shrinking later: at the pace of `dry` itself the strokes were
+        # gone a third of the way in, and at its square halfway; at its cube the
+        # bodies of 跳跳's strokes last to ~3/4 and the heads to ~9/10. Paced by the
+        # 95th percentile of the radius, not the widest point, which set it alone.
+        size = np.percentile(r, 95) + RIM
+        r = r - dry ** 3 * size / 0.75 * (1.0 + 0.25 * patchy)
+        core = core + (np.asarray(WET_RIM) - core) * dry
+    rim = r + RIM * (1.0 - dry)
+    keep = rim > 0.0
+    for xi, yi, ri in zip(x[keep], y[keep], rim[keep]):
+        if not _add_disc(scene, xi, yi, ri, WET_RIM):
+            return
+    keep = r > 0.0
+    for xi, yi, ri in zip(x[keep], y[keep], r[keep]):
+        if not _add_disc(scene, xi, yi, ri, core, ink.LIFT + 0.0001, WET_SPECULAR):
+            return
+
+
+def _backdrop(scene, shot: cameras.Shot) -> None:
+    """A wall of haze behind everything, square to the camera: the model has no
+    sky, and the low shot would otherwise put black above the horizon."""
+    f = shot.forward()
+    fh = np.array([f[0], f[1], 0.0]) / np.linalg.norm(f[:2])
+    centre = shot.position() + 9.0 * fh
+    right = np.cross(fh, (0.0, 0.0, 1.0))
+    rot = np.column_stack([right, fh, (0.0, 0.0, 1.0)])
+    g = scene.geoms[scene.ngeom]
+    mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_BOX, np.array([30.0, 0.01, 10.0]),
+                        centre, rot.ravel(), np.asarray(HAZE, dtype=np.float32))
+    g.emission = 1.0
+    g.specular = 0.0
+    # Decor casts no shadow; as a plain geom it laid dark bands along the horizon.
+    g.category = mujoco.mjtCatBit.mjCAT_DECOR
+    scene.ngeom += 1
+
+
+def _add_ball(scene, p, r: float, rgba) -> None:
+    g = scene.geoms[scene.ngeom]
+    mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_SPHERE, np.array([r, r, r]),
+                        np.asarray(p, dtype=float), np.eye(3).ravel(),
+                        np.asarray(rgba, dtype=np.float32))
+    scene.ngeom += 1
+
+
+class Replay:
+    def __init__(self, run: Path):
+        self.m = mujoco.MjModel.from_binary_path(str(run / "model.mjb"))
+        dress(self.m)
+        self.sky = sky_horizon(self.m) is not None
+        self.d = mujoco.MjData(self.m)
+        self.log = ink.Log(run / "log.npz")
+        if self.log.qpos is None:
+            raise SystemExit(f"{run}/log.npz has no qpos; rerun write.py")
+        self.plan = hanzi.Plan.from_json(json.loads((run / "plan.json").read_text()))
+        self.t = self.log["t"]
+        # The run finale's laps (write.py --finale run), which the ink dries over.
+        laps = (np.where(self.log["phase"] == self.log.phases.index("run"))[0]
+                if "run" in self.log.phases else [])
+        self.run = (float(self.t[laps[0]]), float(self.t[laps[-1]])) if len(laps) else None
+        # The brush put down before the jump (write.py --finale run): laid on the
+        # stone over the last PUT_LAY_S before the jump's first row, from where the
+        # claw, come down for the jump, last held it.
+        self.put_down = None
+        #: The first row putting the brush down and the last of the jump.
+        self.jump = None
+        if "jump" in self.log.phases:
+            jumped = np.where(self.log["phase"] == self.log.phases.index("jump"))[0]
+            put = np.where(self.log["phase"] == self.log.phases.index("put"))[0]
+            if len(jumped):
+                self.put_down = (float(self.t[jumped[0]]),
+                                 _lying_brush(self.m, self.log.qpos[max(jumped[0] - 1, 0)]))
+                self.jump = (int(put[0]) if len(put) else int(jumped[0]), int(jumped[-1]))
+
+    def at(self, t: float) -> None:
+        i = int(np.clip(np.searchsorted(self.t, t), 0, len(self.t) - 1))
+        self.d.qpos[:] = self.log.qpos[i]
+        mujoco.mj_forward(self.m, self.d)
+
+    def renderer(self, shot: cameras.Shot) -> mujoco.Renderer:
+        self.m.vis.global_.fovy = shot.fovy
+        self.m.vis.global_.offwidth = max(self.m.vis.global_.offwidth, shot.width)
+        self.m.vis.global_.offheight = max(self.m.vis.global_.offheight, shot.height)
+        return mujoco.Renderer(self.m, shot.height, shot.width, max_geom=20000)
+
+
+def clear_of_robot(rp: Replay, shot: cameras.Shot, room: float = 0.3) -> cameras.Shot:
+    """`shot` moved back along its own line until the robot's trunk, in the outro,
+    never comes within `room` of the camera: running laps around a lone character
+    took the robot through the low camera, 47 cm from 无."""
+    late = np.isin(rp.log["phase"], [rp.log.phases.index(p) for p in ("outro", "run")
+                                     if p in rp.log.phases])
+    if not late.any():
+        return shot
+    trunk = np.column_stack([rp.log["bx"][late], rp.log["by"][late]])
+    d = shot.distance
+    while np.linalg.norm(trunk - dataclasses.replace(shot, distance=d).position()[:2],
+                         axis=1).min() < room:
+        d += 0.05
+    return dataclasses.replace(shot, distance=d)
+
+
+def _lying_brush(m: mujoco.MjModel, qpos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """`brush.lying` from the claw in `qpos`."""
+    from tasks.jumper.calligraphy import brush
+
+    d = mujoco.MjData(m)
+    d.qpos[:] = qpos
+    mujoco.mj_kinematics(m, d)
+    return brush.lying(m, d)
+
+
+def _slerp(a: np.ndarray, b: np.ndarray, f: float) -> np.ndarray:
+    """Rotation matrices: the one f of the way from a to b, about one axis."""
+    qa, qb = np.zeros(4), np.zeros(4)
+    mujoco.mju_mat2Quat(qa, a.ravel())
+    mujoco.mju_mat2Quat(qb, b.ravel())
+    dot = float(qa @ qb)
+    if dot < 0:
+        qb, dot = -qb, -dot
+    w = math.acos(min(dot, 1.0))
+    q = qb if w < 1e-6 else (math.sin((1 - f) * w) * qa + math.sin(f * w) * qb) / math.sin(w)
+    out = np.zeros(9)
+    mujoco.mju_quat2Mat(out, q / np.linalg.norm(q))
+    return out.reshape(3, 3)
+
+
+def _brush_down(rp: Replay, scene, f: float) -> None:
+    """The brush f of the way from the claw onto the stone (Replay.put_down),
+    eased: the scene's own brush geoms, moved as one body -- a geom made anew
+    draws some other mesh unless its dataid is twice the mesh's id, which is
+    MuJoCo's convention in a scene."""
+    from tasks.jumper.calligraphy import brush
+
+    ids = {rp.m.geom("robot/" + n).id for n in brush.GEOMS}
+    geoms = [scene.geoms[i] for i in range(scene.ngeom)
+             if scene.geoms[i].objtype == mujoco.mjtObj.mjOBJ_GEOM
+             and scene.geoms[i].objid in ids]
+    if not geoms:
+        return
+    local = {}
+    for g in ids:
+        q = np.zeros(9)
+        mujoco.mju_quat2Mat(q, rp.m.geom_quat[g])
+        local[g] = (rp.m.geom_pos[g], q.reshape(3, 3))
+    # The body's pose in the claw, from any one of its geoms as the scene drew it.
+    g0 = geoms[0]
+    held_rot = g0.mat.reshape(3, 3) @ local[g0.objid][1].T
+    held_pos = g0.pos - held_rot @ local[g0.objid][0]
+    f = f * f * (3 - 2 * f)
+    pos = held_pos + f * (rp.put_down[1][0] - held_pos)
+    rot = _slerp(held_rot, rp.put_down[1][1], f)
+    for g in geoms:
+        p, r = local[g.objid]
+        g.pos[:], g.mat[:] = pos + rot @ p, rot @ r
+
+
+def text_frame(plan) -> tuple[tuple[float, float], float]:
+    """The text's centre and its larger extent: a single character's em square, or
+    the whole of a longer text."""
+    x0, x1, y0, y1 = plan.bounds()
+    return ((x0 + x1) / 2, (y0 + y1) / 2), max(plan.size, x1 - x0, y1 - y0)
+
+
+def ink_points(marks) -> np.ndarray:
+    """(n, 4) rows of t, x, y, radius: every inked point once, in time order, so
+    a frame at time t draws a prefix."""
+    if not marks:
+        return np.zeros((0, 4))
+    pts = np.concatenate([np.column_stack([m.t, m.xyz[:, :2], m.width / 2]) for m in marks])
+    return pts[np.argsort(pts[:, 0])]
+
+
+def frame(rp: Replay, r: mujoco.Renderer, shot: cameras.Shot, cam, pts, t: float,
+          dry: float = 0.0) -> np.ndarray:
+    """One picture of the run at time t; the ink laid by then, unless `pts` is None,
+    dried off by `dry` (0 to 1)."""
+    rp.at(t)
+    r.update_scene(rp.d, camera=cam)
+    r.scene.flags[mujoco.mjtRndFlag.mjRND_FOG] = True
+    r.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = False
+    if shot.elevation > -60 and not rp.sky:
+        _backdrop(r.scene, shot)
+    if rp.put_down is not None and t > rp.put_down[0] - PUT_LAY_S:
+        _brush_down(rp, r.scene, min(1.0, (t - rp.put_down[0] + PUT_LAY_S) / PUT_LAY_S))
+    if pts is not None:
+        _add_ink(r.scene, pts[:np.searchsorted(pts[:, 0], t, side="right")], dry)
+    return r.render()
+
+
+def render_shot(rp: Replay, shot: cameras.Shot, marks, out: Path, fps: float, speed: float,
+                with_ink: bool, hold: float = 2.0, scale: float = 1.0,
+                dry: bool = True) -> list[np.ndarray]:
+    """Frames of one shot; written to `out` as mp4 (or returned for a gif). The
+    ink dries in it only over the run finale's laps."""
+    r = rp.renderer(shot)
+    cam = shot.mjv_camera()
+    # Every inked point once, in time order, so a frame draws a prefix.
+    pts = ink_points(marks)
+    t_end = rp.t[-1]
+    times = np.arange(0.0, t_end, speed / fps)
+    times = np.concatenate([times, np.full(int(hold * fps), t_end)])
+    frames = []
+    writer = None
+    if out.suffix == ".mp4":
+        import imageio.v2 as imageio
+
+        writer = imageio.get_writer(out, fps=fps, codec="libx264", quality=8,
+                                    macro_block_size=8)
+    for k, t in enumerate(times):
+        img = frame(rp, r, shot, cam, pts if with_ink else None, t,
+                    drying(rp, t) if dry and rp.run is not None else 0.0)
+        if scale != 1.0:
+            from PIL import Image
+
+            img = np.asarray(Image.fromarray(img).resize(
+                (int(img.shape[1] * scale), int(img.shape[0] * scale)), Image.LANCZOS))
+        if writer is not None:
+            writer.append_data(img)
+        else:
+            frames.append(img)
+        if k % 200 == 0:
+            print(f"  {shot.name}: frame {k}/{len(times)}", flush=True)
+    if writer is not None:
+        writer.close()
+    r.close()
+    return frames
+
+
+def write_gif(frames: list[np.ndarray], path: Path, fps: float) -> None:
+    from PIL import Image
+
+    imgs = [Image.fromarray(f) for f in frames]
+    # One palette for the whole clip, from a frame with all the ink on it: per-frame
+    # palettes make the floor flicker between neighbouring greys.
+    palette = imgs[-1].quantize(colors=128, method=Image.Quantize.MEDIANCUT)
+    q = [im.quantize(palette=palette, dither=Image.Dither.NONE) for im in imgs]
+    q[0].save(path, save_all=True, append_images=q[1:], duration=int(1000 / fps), loop=0,
+              optimize=True)
+
+
+def check(rp: Replay, shots) -> float:
+    """Markers at known floor points: rendered pixel vs `Shot.project`."""
+    cx, cy = rp.plan.origin
+    h = rp.plan.size / 2
+    # Resting on the floor rather than centred in it: half a ball sunk in the floor
+    # shows only its top from a low camera, and the visible part's centroid sits
+    # 2-3 px above the centre -- an error in the check, not in the projection.
+    rad = 0.006
+    probe = np.array([[cx, cy, rad], [cx + h, cy + h, rad], [cx - h, cy - h, rad],
+                      [cx + h, cy - h, rad], [cx - h, cy + h, rad]])
+    rp.at(0.0)
+    worst = 0.0
+    for shot in shots:
+        r = rp.renderer(shot)
+        for p in probe:
+            r.update_scene(rp.d, camera=shot.mjv_camera())
+            _add_ball(r.scene, p, rad, (1.0, 0.0, 1.0, 1.0))
+            img = r.render().astype(int)
+            magenta = (img[..., 0] > 200) & (img[..., 1] < 60) & (img[..., 2] > 200)
+            if not magenta.any():
+                print(f"  {shot.name}: marker at {p[:2]} not visible")
+                continue
+            ys, xs = np.nonzero(magenta)
+            got = np.array([xs.mean() + 0.5, ys.mean() + 0.5])
+            want = shot.project(p[None])[0]
+            err = float(np.linalg.norm(got - want))
+            worst = max(worst, err)
+            print(f"  {shot.name}: marker {p[:2]} rendered at {got.round(1)}, "
+                  f"projected {want.round(1)}: {err:.1f} px")
+        r.close()
+    return worst
+
+
+#: The brush the robot puts down before its jump (write.py --finale run) goes from
+#: the claw to where `brush.lying` lays it over the last PUT_LAY_S before the jump.
+PUT_LAY_S = 0.4                   # s
+#: The jump (write.py's run finale) has a shot of its own, jump.mp4: low, from
+#: behind the robot's left shoulder, the brush put down before it and the text
+#: beyond -- (azimuth from its heading, elevation, both deg; distance, m). The film
+#: sees the jump from high above, where it hardly shows, and the low shot had the
+#: robot half out of frame beside 跳跳 你好 (2026-10-11). At JUMP_FPS, the rate
+#: write.py logs at, it can be slowed to half speed with a new picture in five
+#: frames of six at 30 fps; slowing a 30 fps film with ffmpeg's minterpolate
+#: smeared the robot in the air.
+JUMP_SHOT = (-40.0, -12.0, 0.85)
+JUMP_FPS = 50.0
+JUMP_PAD = (1.5, 1.0)             # s before the put-down and after the jump
+#: The film: following the character being written from behind the robot's
+#: shoulder, then pulling back to the whole text and the robot beside it.
+#: Steep, so the robot in front of the character does not hide it: at -55 deg,
+#: from behind its shoulder, the trunk covered the stroke being written.
+FILM_FOLLOW = {"distance": 0.78, "elevation": -72.0, "azimuth": 0.0}
+FILM_REVEAL_ELEVATION = -70.0
+#: Seconds of simulation the camera takes to settle on a new target (both ways in
+#: time, so it moves before a cut rather than lagging after it).
+FILM_TAU = 1.5
+FILM_HOLD = 5.0                   # s on the finished text at the end
+#: Where the robot stands for the outro, beside the text: `write.OUTRO_STAND_OFF`.
+OUTRO_STAND_OFF = 0.32
+
+
+def _fit_distance(x_extent: float, y_extent: float, shot: cameras.Shot) -> float:
+    """How far a camera looking straight down at az 0 (+x up, -y right) has to be
+    for x_extent x y_extent metres of floor to fill the frame."""
+    v = math.tan(math.radians(shot.fovy) / 2)
+    h = v * shot.width / shot.height
+    return max(x_extent / (2 * v), y_extent / (2 * h))
+
+
+def film_track(rp: Replay, times: np.ndarray, size: tuple[int, int] = (960, 720)
+               ) -> list[cameras.Shot]:
+    """One Shot per time, `size` pixels: the character being written, then the
+    reveal."""
+    plan, log = rp.plan, rp.log
+    outro = rp.log.phases.index("outro") if "outro" in rp.log.phases else -1
+    char_of = np.array([s.char for s in plan.strokes])
+    centres = {}
+    for c in set(char_of.tolist()):
+        xy = np.concatenate([s.xy for s in plan.strokes if s.char == c])
+        centres[c] = (xy.min(0) + xy.max(0)) / 2
+    x0, x1, y0, y1 = plan.bounds()
+    # The text and wherever the robot goes in the outro, its body 15 cm about its
+    # trunk -- beside the text for the dance, all around it for the run.
+    late = np.isin(log["phase"], [log.phases.index(p) for p in ("outro", "run")
+                                  if p in log.phases])
+    if late.any():
+        bx, by = log["bx"][late], log["by"][late]
+        x0, x1 = min(x0, bx.min() - 0.15), max(x1, bx.max() + 0.15)
+        y0, y1 = min(y0, by.min() - 0.15), max(y1, by.max() + 0.15)
+    else:
+        y0 -= OUTRO_STAND_OFF + 0.12
+    probe = cameras.Shot("film", (0, 0, 0), 1.0, 0.0, -90.0, width=size[0], height=size[1])
+    # Never nearer than a metre: the robot stands 15 cm off the floor, and nearer
+    # than that it fills the frame at the edge.
+    reveal_d = max(1.0, 1.3 * _fit_distance(x1 - x0 + 0.08, y1 - y0 + 0.04, probe))
+    reveal = np.array([(x0 + x1) / 2 - 0.04, (y1 + y0) / 2, 0.0, reveal_d,
+                       FILM_REVEAL_ELEVATION, 0.0])
+    end = rp.t[-1]
+    targets = np.zeros((len(times), 6))
+    revealing = False
+    for k, t in enumerate(times):
+        i = int(np.clip(np.searchsorted(rp.t, t), 0, len(rp.t) - 1))
+        revealing = revealing or t >= end or log["phase"][i] == outro
+        if revealing:
+            targets[k] = reveal
+            continue
+        s = int(log["stroke"][i])
+        c = int(char_of[s]) if 0 <= s < len(char_of) else 0
+        # Between the character and the robot, which stands 10-30 cm from it.
+        cx, cy = centres[c]
+        bx, by = log["bx"][i], log["by"][i]
+        sep = math.hypot(cx - bx, cy - by)
+        targets[k] = (0.55 * cx + 0.45 * bx, 0.55 * cy + 0.45 * by, 0.0,
+                      max(FILM_FOLLOW["distance"], 1.6 * sep + 0.35),
+                      FILM_FOLLOW["elevation"], FILM_FOLLOW["azimuth"])
+    # Zero-phase smoothing in simulated time: forward, then backward.
+    dt = np.diff(times, prepend=times[0])
+    a = 1.0 - np.exp(-np.maximum(dt, 1e-3) / FILM_TAU)
+    sm = targets.copy()
+    for k in range(1, len(sm)):
+        sm[k] = sm[k - 1] + a[k] * (targets[k] - sm[k - 1])
+    for k in range(len(sm) - 2, -1, -1):
+        sm[k] = sm[k + 1] + a[k + 1] * (sm[k] - sm[k + 1])
+    # The shot can lag the action; never the start and the end, which hold still.
+    return [cameras.Shot("film", tuple(v[:3]), float(v[3]), float(v[5]), float(v[4]),
+                         width=size[0], height=size[1]) for v in sm]
+
+
+def drying(rp: Replay, t: float) -> float:
+    """How far the ink has dried at film time `t`: over the run finale's laps, or
+    else over DRY_S from FILM_HOLD after the log's end."""
+    if rp.run is not None:
+        a, b = rp.run
+        return float(np.clip((t - a) / max(b - a, 1e-6), 0.0, 1.0))
+    return float(np.clip((t - float(rp.t[-1]) - FILM_HOLD) / DRY_S, 0.0, 1.0))
+
+
+def render_film(rp: Replay, marks, out: Path, fps: float, dry: bool = True,
+                size: tuple[int, int] = (960, 720)) -> None:
+    """film.mp4: real time, the camera following, then the reveal and a hold, and
+    the ink drying off the stone."""
+    import imageio.v2 as imageio
+
+    end = rp.t[-1]
+    after = FILM_HOLD + (DRY_S + DRY_HOLD if dry and rp.run is None else 0.0)
+    times = np.concatenate([np.arange(0.0, end, 1.0 / fps),
+                            end + np.arange(1, int(after * fps) + 1) / fps])
+    shots = film_track(rp, times, size)
+    r = rp.renderer(shots[0])
+    pts = ink_points(marks)
+    writer = imageio.get_writer(out, fps=fps, codec="libx264", quality=8, macro_block_size=8)
+    for k, (t, shot) in enumerate(zip(times, shots)):
+        writer.append_data(frame(rp, r, shot, shot.mjv_camera(), pts, min(t, end),
+                                 drying(rp, t) if dry else 0.0))
+        if k % 200 == 0:
+            print(f"  film: frame {k}/{len(times)}", flush=True)
+    writer.close()
+    r.close()
+
+
+def jump_shot(rp: Replay, size: tuple[int, int]) -> cameras.Shot:
+    """JUMP_SHOT, on where the robot stood to put the brush down."""
+    i = rp.jump[0]
+    yaw = float(rp.log["byaw"][i])
+    bx, by = float(rp.log["bx"][i]), float(rp.log["by"][i])
+    ahead, look_z = 0.08, 0.12  # m: a little in front of the trunk, half way up the jump
+    az, el, dist = JUMP_SHOT
+    return cameras.Shot("jump", (bx + ahead * math.cos(yaw), by + ahead * math.sin(yaw),
+                                 look_z), dist, math.degrees(yaw) + az, el,
+                        width=size[0], height=size[1])
+
+
+def render_jump(rp: Replay, marks, out: Path, size: tuple[int, int] = (960, 720)) -> None:
+    """jump.mp4: from JUMP_PAD[0] before the brush is put down to JUMP_PAD[1] after
+    the jump, real time, at JUMP_FPS."""
+    import imageio.v2 as imageio
+
+    a, b = float(rp.t[rp.jump[0]]) - JUMP_PAD[0], float(rp.t[rp.jump[1]]) + JUMP_PAD[1]
+    shot = jump_shot(rp, size)
+    r = rp.renderer(shot)
+    cam = shot.mjv_camera()
+    pts = ink_points(marks)
+    writer = imageio.get_writer(out, fps=JUMP_FPS, codec="libx264", quality=8,
+                                macro_block_size=8)
+    for t in np.arange(a, b, 1.0 / JUMP_FPS):
+        writer.append_data(frame(rp, r, shot, cam, pts, t, drying(rp, t)))
+    writer.close()
+    r.close()
+
+
+def render_result(rp: Replay, marks, out: Path) -> None:
+    """result.png: the finished text from straight above, 1920 x 1080, and the
+    robot beside it if it stands in the frame."""
+    from PIL import Image
+
+    x0, x1, y0, y1 = rp.plan.bounds()
+    probe = cameras.Shot("result", (0, 0, 0), 1.0, 0.0, -90.0, width=1920, height=1080)
+    d = 1.25 * _fit_distance(x1 - x0, y1 - y0, probe)
+    shot = cameras.Shot("result", ((x0 + x1) / 2, (y0 + y1) / 2, 0.0), d, 0.0, -90.0,
+                        width=1920, height=1080)
+    r = rp.renderer(shot)
+    Image.fromarray(frame(rp, r, shot, shot.mjv_camera(), ink_points(marks),
+                          float(rp.t[-1]))).save(out)
+    r.close()
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("run", type=Path, help="a write.py output directory")
+    ap.add_argument("--shots", nargs="+", default=["film", "top", "low", "jump"],
+                    help="film (following, then the reveal), top, low, jump (when the "
+                         "run has one)")
+    ap.add_argument("--fps", type=float, default=30.0)
+    ap.add_argument("--size", default="960x720", metavar="WxH",
+                    help="the films' frame, pixels: 1920x1080 for a video to post (the "
+                         "README's gif keeps 480x360)")
+    ap.add_argument("--no-ink", action="store_true", help="clean plates, no ink drawn")
+    ap.add_argument("--gif-speed", type=float, default=6.0)
+    ap.add_argument("--no-gif", action="store_true")
+    ap.add_argument("--no-dry", dest="dry", action="store_false",
+                    help="end the film on the ink, without it drying off the stone")
+    ap.add_argument("--still", type=float, nargs="+", metavar="T",
+                    help="write <shot>_<T>.png at these times (s) and stop")
+    ap.add_argument("--check", action="store_true",
+                    help="check the projection against the renderer and stop")
+    args = ap.parse_args()
+
+    rp = Replay(args.run)
+    size = tuple(int(v) for v in args.size.lower().split("x"))
+    gif_top, low = cameras.shots(*text_frame(rp.plan))
+    low = clear_of_robot(rp, low)
+    shots = {s.name: dataclasses.replace(s, width=size[0], height=size[1])
+             for s in (gif_top, low)}
+    fixed = list(shots.values())  # the shots ink.json and --check measure
+    if rp.jump is not None:
+        shots["jump"] = jump_shot(rp, size)
+    args.shots = [n for n in args.shots if n != "jump" or rp.jump is not None]
+    if args.check:
+        worst = check(rp, fixed)
+        print(f"worst marker error: {worst:.1f} px")
+        # Measured on run7 (2026-10-08): top <= 0.5 px, low 1.4-2.1 px, a residual
+        # upward bias of the low shot that is under 1 mm on the floor.
+        return 0 if worst < 2.5 else 1
+
+    ms = ink.marks(rp.log, rp.plan)
+    if args.still:
+        from PIL import Image
+
+        pts = None if args.no_ink else ink_points(ms)
+        for name in args.shots:
+            end = float(rp.t[-1])
+            ts = [min(t, end + FILM_HOLD + DRY_S + DRY_HOLD) for t in args.still]
+            track = (film_track(rp, np.arange(0.0, max(ts) + 1e-9, 1.0 / args.fps), size)
+                     if name == "film" else None)
+            for t in ts:
+                shot = track[min(round(t * args.fps), len(track) - 1)] if track \
+                    else shots[name]
+                r = rp.renderer(shot)
+                path = args.run / f"{name}_{t:05.1f}.png"
+                img = frame(rp, r, shot, shot.mjv_camera(), pts, min(t, end),
+                            drying(rp, t) if (name == "film" or rp.run) and args.dry
+                            else 0.0)
+                Image.fromarray(img).save(path)
+                r.close()
+                print(f"[render] wrote {path}")
+        return 0
+    data = ink.to_json(ms, rp.plan, fixed)
+    (args.run / "ink.json").write_text(json.dumps(data))
+    (args.run / "ink.svg").write_text(ink.to_svg(ms, rp.plan))
+    print(f"[render] {len(ms)} marks, {sum(len(m.t) for m in ms)} points -> ink.json, ink.svg")
+
+    if not args.no_ink:
+        render_result(rp, ms, args.run / "result.png")
+        print(f"[render] wrote {args.run / 'result.png'}")
+    suffix = "" if not args.no_ink else "_plate"
+    for name in args.shots:
+        path = args.run / f"{name}{suffix}.mp4"
+        if name == "film":
+            render_film(rp, ms if not args.no_ink else [], path, args.fps, args.dry, size)
+            print(f"[render] wrote {path}")
+            continue
+        if name == "jump":
+            render_jump(rp, ms if not args.no_ink else [], path, size)
+            print(f"[render] wrote {path}")
+            continue
+        render_shot(rp, shots[name], ms, path, args.fps, 1.0, not args.no_ink, dry=args.dry)
+        print(f"[render] wrote {path}")
+    if not args.no_gif and not args.no_ink:
+        fps = 15.0
+        frames = render_shot(rp, gif_top, ms, args.run / "wu.gif", fps, args.gif_speed,
+                             True, hold=2.5, scale=0.5, dry=args.dry)
+        write_gif(frames, args.run / "wu.gif", fps)
+        size = (args.run / "wu.gif").stat().st_size / 1e6
+        print(f"[render] wrote {args.run / 'wu.gif'} ({len(frames)} frames, {size:.1f} MB)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
