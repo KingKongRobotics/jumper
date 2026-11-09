@@ -575,7 +575,9 @@ class AppPlayer:
         now = self._tick * self._step_us
         self._tick += 1
 
-        pick = lambda row: [float(row[i]) for i in self._wire_from_sim]
+        def pick(row):
+            return [float(row[i]) for i in self._wire_from_sim]
+
         self._fsm.set_state(
             pick(data.joint_pos[0]),
             pick(data.joint_vel[0]),

@@ -52,7 +52,8 @@ def timeline(run: Path) -> dict:
     stretch = log[:, col["stretch"]].astype(int)
     lower, lift = phases.index("lower"), phases.index("lift")
     outro = phases.index("outro")
-    r = lambda v: round(float(v), 2)
+    def r(v):
+        return round(float(v), 2)
 
     # Strokes: from the brush first going down to it last coming up.
     strokes = []
@@ -136,7 +137,9 @@ def main() -> int:
     if args.json:
         print(json.dumps(tl, ensure_ascii=False, indent=1))
         return 0
-    f = lambda v: f"{v:7.2f}"
+    def f(v):
+        return f"{v:7.2f}"
+
     print(f"{tl['text']}  ({tl['size_m'] * 100:.1f} cm a character)   seconds of film.mp4")
     print(f"{f(tl['writing']['start'])}  the brush first goes down")
     for c in tl["characters"]:

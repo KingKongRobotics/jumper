@@ -1,4 +1,4 @@
-<!-- tracks: HARDWARE.md @ sha256:660db68551bb6f7a -->
+<!-- tracks: HARDWARE.md @ sha256:7ffd596fd1501f0b -->
 
 # 跳跳硬件规格
 
@@ -16,7 +16,7 @@
 | 计算 | NPU | 6 TOPS（INT8） |
 | 计算 | 内存 | 4 GB |
 | 计算 | 存储 | 64 GB |
-| 运动 | 关节 | 22 个[触觉舵机](https://kingkong.tech/servo) |
+| 运动 | 关节 | 22 个[触觉舵机](https://shop.kingkong.tech/products/tactile-servo/buy) |
 | 感知 | IMU | 6 轴：3 轴加速度计 + 3 轴陀螺仪 |
 | 感知 | 深度传感器 | dToF，54 × 42 阵列，每帧 2,268 个测距点；配置参考型号：[ST VL53L9CX](https://www.st.com/en/imaging-and-photonics-solutions/vl53l9cx.html) |
 | 感知 | 深度视场角 | 水平 55° × 垂直 42°；对角 71° |

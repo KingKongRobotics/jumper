@@ -27,7 +27,7 @@ MARKER = re.compile(
     r"(?P<head><!--\s*tracks:\s*)(?P<source>\S+?)(?P<mid>\s*@\s*sha256:)"
     r"(?P<digest>[0-9a-f]{16})(?P<tail>\s*-->)"
 )
-ROOTS = ("", "docs", "deploy")
+ROOTS = ("", "docs", "deploy", "notebooks")
 
 
 def digest_of(path: Path) -> str:

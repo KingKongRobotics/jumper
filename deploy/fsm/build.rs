@@ -207,6 +207,18 @@ fn main() {
 
     println!("cargo:rustc-link-search=native={}", dds.join("lib").display());
     println!("cargo:rustc-link-lib=dylib=ddsc");
+    // A macOS host has no `ldconfig`: a library under a prefix of one's own --
+    // the only place a source build lands without sudo -- is found through the
+    // binary's own rpath or not at all, and `cargo test` then links and aborts
+    // on `Library not loaded: @rpath/libddsc.11.dylib`. Linux leaves this to
+    // the loader's cache (section 2.2 of docs/AGENT_SETUP.md) and the board's
+    // build runs in Docker with the library where its loader looks, so the
+    // rpath is written for the macOS host alone, from the same `CYCLONEDDS_HOME`
+    // the library was linked from. Measured on an M3 Max on 2026-10-08: without
+    // it gate F fails after linking; with it, 195 crate tests list and pass.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", dds.join("lib").display());
+    }
 
     // The Rust mirror of `rknn_tensor_attr` is checked against Rockchip's own
     // header, and this compiles **always** -- headers are portable, only the

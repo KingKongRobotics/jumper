@@ -218,3 +218,15 @@ def test_only_the_missing_rust_steps_are_printed() -> None:
     # case above is the control.
     assert detect.device_commands("Linux", _complete_rust(npu_header=False)) == [
         "bash deploy/fsm/vendor/rknpu2/fetch.sh    # Rockchip's NPU header, once per checkout"]
+
+    # macOS gets a measured procedure of its own rather than the "measured on
+    # Linux only" comment it used to: a source build into a prefix under $HOME,
+    # with no sudo and no ldconfig (the crate writes its rpath instead), and the
+    # exports the build takes the rpath from. The complete case is the control
+    # again: a machine with everything is told nothing on this platform too.
+    assert detect.device_commands("Darwin", _complete_rust()) == []
+    mac = detect.device_commands("Darwin", _complete_rust(idlc=None, idlc_text=None,
+                                                          dds_headers=False))
+    assert not any("sudo" in step or "ldconfig" in step for step in mac), mac
+    assert any("CMAKE_INSTALL_PREFIX=$HOME/" in step for step in mac), mac
+    assert any(step.startswith("export CYCLONEDDS_HOME=$HOME/") for step in mac), mac

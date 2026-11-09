@@ -170,7 +170,7 @@ def twist_from_footprint(xy: torch.Tensor) -> torch.Tensor:
     foot positions.
 
     Split out from `body_twist` so that it can be tested without a simulator --
-    `tests/test_posture_twist.py` feeds it footprints rotated by known angles.
+    `tests/test_posture.py` feeds it footprints rotated by known angles.
     The estimator is the closed-form planar Procrustes fit the module docstring
     derives; the centroid is removed here, so callers pass raw body-frame
     positions.

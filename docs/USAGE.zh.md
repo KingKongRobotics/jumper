@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:a32832b3edf24a27 -->
+<!-- tracks: USAGE.md @ sha256:e34e5853b9ba4dfd -->
 
 # 手册
 
@@ -229,6 +229,27 @@ episode 时长，所以回放会循环完整的一次尝试）。observation 噪
 是同一套解析，所以两条命令说“最新的那个”指的是同一个文件。`--agent zero|random` 不需要
 checkpoint，用来看环境本身。回放默认只开一个环境，要更多就给 `--num_envs` 或设
 `MJRL_PLAY_NUM_ENVS`：`MJRL_NUM_ENVS` 是训练的 batch size，play 不读它。
+
+`--video <file.mp4>` 把回放录成视频，有没有窗口都行，走的是仓库里**唯一的一个 MP4
+录像器**（`rl/mjrl/viewer/video.py`）：README 里的动图（`tools/readme_media.py`）、舞蹈导出和
+[Colab notebook](COLAB.zh.md) 都是跑这条命令，而不是各自画图，所以每一张 policy 的画面用的都是
+同一个相机、同一组几何体。它要求给定有限的 `--steps`；`--video-fps`、`--video-width` 和
+`--video-height` 决定文件尺寸，相机以机器人的**第一帧**为基准摆放 —— `--video-azimuth` 是相对
+机器人朝向的角度（0 从背后看、180 正对它的前方），还有 `--video-elevation`、`--video-distance`，
+以及 `--no-video-follow` 配 `--video-lookat-height`，让相机停在第一帧摆放的位置不动。没有显示器的
+Linux 机器需要在 Python 启动前设置 `MUJOCO_GL=egl`。
+
+```bash
+python scripts/play.py --task jumper.tripod --headless --steps 500 --video clip.mp4
+```
+
+另外三个开关是给“用来测量或录制、而不是给人看”的回放用的。`--stop-on-done` 在第一次 episode
+结束时停下，这样一次性动作的录像只包含一次尝试，而不是循环。`--command VX VY YAW` 保持一个固定的
+机体坐标系速度指令，并对照 checkpoint 训练时的范围做检查，`--evaluation-out <json>` 把得到的跟踪
+误差写出来；`--checkpoint-command-ranges` 只在 checkpoint 保存的那一级课程范围内采样，
+`--replay-info-out <json>` 记录实际解析出的设置。`--command-script <file.py>[:name]` 把一个
+时间函数交给指令项 —— `name(t)` 返回 `{指令项: 数值}` —— 写在操作员写入的位置，所以手柄驱动不了
+被脚本化的指令项；README 里的行走和姿态动图就是这样做的（`mjrl.replay.script_commands`）。
 
 `export.py` 把 `actor.onnx`、`layout.json`、一份 README 和 checkpoint 的副本（跟踪录制的
 任务还有 `<name>.trajectory.json`）写到 `tasks/<task path>/out/<date-time>/`
@@ -477,22 +498,18 @@ tasks/jumper/dance/out/<date-time>/
 而不是假定板子上本来就有。
 
 `media/` 之所以是个子目录，是因为 `out/<date-time>/` **就是**那个导出的 policy —— `deploy/` 读这个
-目录来组装板子加载的 bundle，一个 40 MB 的视频没有理由跟着跑这一趟。`--no-video` 跳过渲染，渲染要花
+目录来组装板子加载的 bundle，一个 40 MB 的视频没有理由跟着跑这一趟。`--no-video` 跳过录像，录像要花
 几分钟；导出本身仍然只要几秒。
 
-它内部有三个决定值得借用：
+画面是 `play.py --video` 录的。这个钩子自己不画图：它对整段片段跑一次 `scripts/play.py --video`
+—— 那个唯一的 MP4 录像器，README 动图和 Colab notebook 用的也是它 —— 用固定相机、按任务自己的
+控制频率录（这样视频的时间轴就是仿真的时间轴），再把音乐混到录出来的视频上。它内部有两个决定值得借用：
 
-- **rollout 记录的是 `qpos`；渲染在之后离线进行**。从一个活着的 env 里取像素，需要给 mjwarp 一条路径、
-  给 native 另一条（在 native 里 `_datas[i]` 不是第 `i` 个环境）。通过 `Entity` API 记录，意味着
-  渲染器永远看不到 backend。
-- **在画出一帧之前先校验重建结果**。四元数约定或者关节顺序错了照样能渲染 —— 一台看着像那么回事的机器人，
-  跳着 policy 从没跳过的舞，而下游没有任何东西会抱怨。所以 `qpos` 会在一份临时 `MjData` 上过一遍
-  `mj_forward`，把 body 位置和活着的环境里的那一份对比；并且如果*没有一个* body 名字解析成功，这个
-  检查就判失败，而不是因为什么都没比而通过。
+- **用 `--stop-on-done`，让失败终止条件保持生效**。如果 policy 中途摔了，录像就停在那里，导出会把
+  这件事说出来，而不是展示一台被传送回参考轨迹、继续跳下去的机器人 —— 那恰恰会在最要紧的地方
+  歪曲这个 policy。
 - **音乐的偏移量是从片段里读出来的**。这段编舞开头有 2.0 s 的静默引子（`audio_start_in_sim`，在全部
   496 拍上都精确）。从零开始混音会让表演早两拍半 —— 早得刚好还能让人信以为真。
-
-如果 policy 中途摔了，视频就停在那里，导出会把这件事说出来。
 
 ### 把这套模仿机制用到另一个任务上
 

@@ -291,10 +291,31 @@ sudo cmake --install /tmp/cyclonedds/build && sudo ldconfig
 searched through the loader's cache, and without it the test binary links and then cannot start
 — which is why gate F runs it rather than only building it.
 
-Elsewhere it is the same source build, with `CYCLONEDDS_HOME` set to the install prefix and its
+On macOS it is the same source build into a prefix of your own -- nothing under `/usr/local`,
+no `sudo`, and no `ldconfig`, which macOS does not have. The crate writes the prefix's `lib/`
+into the test binary's rpath from `CYCLONEDDS_HOME` instead, so the two exports below belong in
+the shell that runs `cargo` and `gates.py`, not only in the one that installed:
+
+```bash
+brew install cmake
+git clone --depth 1 --branch 11.0.1 https://github.com/eclipse-cyclonedds/cyclonedds.git /tmp/cyclonedds
+cmake -S /tmp/cyclonedds -B /tmp/cyclonedds/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.local/opt/cyclonedds-11.0.1 -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_IDLC=ON
+cmake --build /tmp/cyclonedds/build -j
+cmake --install /tmp/cyclonedds/build
+export CYCLONEDDS_HOME=$HOME/.local/opt/cyclonedds-11.0.1
+export PATH=$CYCLONEDDS_HOME/bin:$PATH
+```
+
+bindgen finds libclang in Xcode's command-line tools. Measured on an M3 Max (Darwin 25.5,
+cargo 1.95.0) on 2026-10-08: the build takes about two minutes, gate F lists 195 tests, and
+`cargo test --lib` in `deploy/fsm` passes all of them. A test binary built before
+`CYCLONEDDS_HOME` was exported carries no rpath and aborts with
+`Library not loaded: @rpath/libddsc.11.dylib`; rebuild it (`cargo clean -p mjrl-fsm`) rather
+than reinstalling CycloneDDS.
+
+On Windows it is the same source build, with `CYCLONEDDS_HOME` at the install prefix, its
 `bin/` on `PATH` (`idlc` is taken from `PATH`, the headers and the library from
-`CYCLONEDDS_HOME`). bindgen finds libclang in Xcode's command-line tools on macOS and needs an
-LLVM install (`LIBCLANG_PATH`) on Windows. **Measured on Linux only.**
+`CYCLONEDDS_HOME`) and an LLVM install for bindgen (`LIBCLANG_PATH`). **Not measured.**
 
 **Rockchip's NPU header is the one part fetched per checkout rather than installed per
 machine.** `build.rs` also compiles a probe against `deploy/fsm/vendor/rknpu2/include/rknn_api.h`,
@@ -585,6 +606,14 @@ The first: `libddsc` is not under `$CYCLONEDDS_HOME/lib`. The second: bindgen ha
 
 Built and linked, and the loader cannot find the library. **Remedy**: `sudo ldconfig` after
 installing into `/usr/local`, or add CycloneDDS's `lib/` to `LD_LIBRARY_PATH`.
+
+### macOS: `Library not loaded: @rpath/libddsc.11.dylib`
+
+The same failure under the macOS loader, which has no cache to refresh: the test binary's
+rpath comes from `CYCLONEDDS_HOME` at build time, and this one was built before it was
+exported, or against another prefix. **Remedy**: export `CYCLONEDDS_HOME` as in 2.2 and
+rebuild (`cargo clean -p mjrl-fsm`); `DYLD_LIBRARY_PATH` pointed at the prefix's `lib/`
+gets one run through without a rebuild.
 
 ---
 

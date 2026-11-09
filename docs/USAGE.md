@@ -249,6 +249,34 @@ no checkpoint and is for looking at the environment itself. A replay is one
 environment unless `--num_envs` or `MJRL_PLAY_NUM_ENVS` says otherwise:
 `MJRL_NUM_ENVS` is training's batch size, and play does not read it.
 
+`--video <file.mp4>` records the replay, with or without a window, through the
+repository's **one MP4 recorder** (`rl/mjrl/viewer/video.py`): the README clips
+(`tools/readme_media.py`), the dance export and the [Colab notebook](COLAB.md) all
+run this command rather than drawing for themselves, so every picture of a policy
+is the same camera and the same geoms. It needs a finite `--steps`; `--video-fps`,
+`--video-width` and `--video-height` size the file, and the camera is placed from
+the robot's **first frame** -- `--video-azimuth` in degrees from the way it faces
+(0 from behind, 180 at its front), `--video-elevation`, `--video-distance`, and
+`--no-video-follow` with `--video-lookat-height` for a camera that stays where the
+first frame put it. A Linux machine without a display needs `MUJOCO_GL=egl` set
+before Python starts.
+
+```bash
+python scripts/play.py --task jumper.tripod --headless --steps 500 --video clip.mp4
+```
+
+Three more switches are for a replay that measures or records rather than one
+somebody watches. `--stop-on-done` ends the replay at the first episode end, so a
+recording of a one-shot motion holds one attempt rather than looping. `--command
+VX VY YAW` holds a fixed body-frame velocity, checked against the range the
+checkpoint was trained on, and `--evaluation-out <json>` writes the tracking error
+it got; `--checkpoint-command-ranges` samples only the curriculum rung the
+checkpoint saved, and `--replay-info-out <json>` records what was resolved.
+`--command-script <file.py>[:name]` hands the command terms a function of time --
+`name(t)` returns `{term: values}` -- written where the operator writes, so the
+pad does not drive a scripted term; it is how the README clips walk and change
+posture (`mjrl.replay.script_commands`).
+
 `export.py` writes `actor.onnx`, `layout.json`, a README and a copy of the checkpoint
 (plus `<name>.trajectory.json`, for a task that tracks a recording) to
 `tasks/<task path>/out/<date-time>/` -- one directory per export, beside the task
@@ -531,26 +559,22 @@ ONNX rather than being something the board is assumed to already have.
 
 `media/` is a subdirectory because `out/<date-time>/` **is** the exported policy —
 `deploy/` reads that directory to assemble the bundle a board loads, and a 40 MB
-video has no business making the trip. `--no-video` skips the render, which takes
-minutes; the export itself still takes seconds.
+video has no business making the trip. `--no-video` skips the recording, which
+takes minutes; the export itself still takes seconds.
 
-Three decisions inside it are worth borrowing:
+The picture is `play.py --video`'s. The hook draws nothing: it runs
+`scripts/play.py --video` — the one MP4 recorder, the same one the README clips
+and the Colab notebook use — for the whole clip with a fixed camera, at the
+task's own control rate so the video's time axis is the simulation's, and muxes
+the music onto what comes back. Two decisions inside it are worth borrowing:
 
-- **The rollout records `qpos`; rendering happens afterwards, offline.** Pulling
-  pixels out of a live env would need one path for mjwarp and another for native
-  (where `_datas[i]` is not environment `i`). Recording through the `Entity` API
-  means the renderer never sees a backend.
-- **The reconstruction is checked before a frame is drawn.** A wrong quaternion
-  convention or joint order still renders — a plausible robot dancing a dance the
-  policy never performed, with nothing downstream to complain. So `qpos` goes
-  through `mj_forward` on a scratch `MjData` and the body positions are compared
-  against the live environment's, and the check fails if *no* body name resolved
-  rather than passing on having compared nothing.
+- **`--stop-on-done`, so failure terminations stay on.** If the policy falls
+  partway through, the recording stops there and the export says so, rather than
+  showing a robot teleported back to the reference and carrying on — which would
+  misrepresent the policy exactly where it matters most.
 - **The music offset is read from the clip.** This choreography opens with a 2.0 s
   silent lead-in (`audio_start_in_sim`, exact across all 496 beats). Muxing at zero
   puts the performance two and a half beats early — close enough to be believed.
-
-If the policy falls partway through, the video stops there and the export says so.
 
 ### Reusing the imitation stack for another task
 

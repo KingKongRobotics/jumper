@@ -298,11 +298,29 @@ def device_commands(system, rust):
         return steps
     if rust["idlc"] and rust["dds_headers"]:
         return steps
+    src = "/tmp/cyclonedds"
+    if system == "Darwin":
+        # The same source build into a prefix of one's own: no sudo, nothing under
+        # /usr/local, and no ldconfig, which macOS does not have -- the crate writes
+        # the prefix's lib/ into the test binary's rpath from CYCLONEDDS_HOME
+        # instead, so the exports belong in the shell that runs cargo. Measured on
+        # an M3 Max on 2026-10-08 (section 2.2 of docs/AGENT_SETUP.md).
+        prefix = "$HOME/.local/opt/cyclonedds-%s" % CYCLONEDDS_TAG
+        return steps + [
+            "brew install cmake",
+            "git clone --depth 1 --branch %s https://github.com/eclipse-cyclonedds/cyclonedds.git %s"
+            % (CYCLONEDDS_TAG, src),
+            "cmake -S %s -B %s/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=%s"
+            " -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DBUILD_IDLC=ON" % (src, src, prefix),
+            "cmake --build %s/build -j" % src,
+            "cmake --install %s/build" % src,
+            "export CYCLONEDDS_HOME=%s PATH=%s/bin:$PATH"
+            "    # in the shell that builds: the crate takes its rpath from it" % (prefix, prefix),
+        ]
     if system != "Linux":
         return steps + ["# CycloneDDS %s from source with cmake, CYCLONEDDS_HOME at its prefix,"
                 " idlc on PATH" % CYCLONEDDS_TAG,
-                "# -- section 2.2 of docs/AGENT_SETUP.md; measured on Linux only"]
-    src = "/tmp/cyclonedds"
+                "# -- section 2.2 of docs/AGENT_SETUP.md; measured on Linux and macOS only"]
     return steps + [
         "sudo apt install -y cmake git",
         "git clone --depth 1 --branch %s https://github.com/eclipse-cyclonedds/cyclonedds.git %s"

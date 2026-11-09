@@ -124,7 +124,9 @@ class Arm:
         self._jacp = np.zeros((3, model.nv))
         # The claw and the brush, against every other collision geom of the robot
         # but the forearm the palm is mounted on (they overlap by construction).
-        name = lambda g: model.body(model.geom_bodyid[g]).name[len(PREFIX):]
+        def name(g):
+            return model.body(model.geom_bodyid[g]).name[len(PREFIX):]
+
         robot = [g for g in range(model.ngeom)
                  if model.geom_bodyid[g] != 0 and (model.geom(g).name or "").endswith(
                      ("meshcol", "meshcol1", "meshcol2", "meshcol3", "meshcol4", "meshcol5"))]

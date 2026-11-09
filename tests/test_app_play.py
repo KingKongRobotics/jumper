@@ -431,7 +431,9 @@ def test_the_hook_s_arm_preset_reaches_the_joints(played) -> None:
     up = [-90.0, -180.0, 0.0, -1.0]
     down = [-90.0, -30.0, 30.0, -1.0]
     stow = [-30.0, -90.0, -30.0, -75.0]
-    near = lambda a, b, tol: all(abs(x - y) < tol for x, y in zip(a, b, strict=True))
+    def near(a, b, tol):
+        return all(abs(x - y) < tol for x, y in zip(a, b, strict=True))
+
     assert near(_deg(played["claw"]["arm"]), stow, 5.0), _deg(played["claw"]["arm"])
     assert not near(_deg(played["claw"]["target"]), up, 20.0), "the preset was there before the press"
     assert near(_deg(played["up"]["target"]), up, 0.5), _deg(played["up"]["target"])

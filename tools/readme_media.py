@@ -9,37 +9,40 @@ replay environment, so a picture in the README is of a policy somebody can load,
 not of one that lived in a `logs/` directory and is gone. Re-run it when a model,
 a scene or an export changes; it writes `docs/media/`.
 
-## No window, and one environment
+## The frames are `play.py --video`'s
 
-The environment is built in-process on the native backend with one environment,
-and the frames are drawn afterwards by a plain `mujoco.Renderer` over EGL. So it
-runs over ssh and beside a desktop, and it never reads pixels out of a live
-simulation -- `tasks/jumper/dance/export_media.py` has why that split matters.
+This file draws nothing. Each clip is one run of `scripts/play.py --video` -- the
+repository's one MP4 recorder, `rl/mjrl/viewer/video.py` -- on the native backend
+with one environment, headless, in the studio scene, at the task's own physics
+rate; the GIF and the still are cut from that MP4 with ffmpeg afterwards. It
+used to render for itself, as did the dance export, and three renderers meant
+three cameras and three lists of which geoms to hide: a difference between two
+pictures of one policy read as a difference between two policies.
 
 ## The command is scripted, the way the operator's is written
 
 A replay hands the velocity and posture commands to the operator -- the pad and
 the keyboard. Nobody is holding either here, so each clip's command is a function
-of time, written into the command term after the term's own `compute`, which is
-where the operator writes its own. The pad is never opened: one that is plugged
-in and nudged would drive the clip instead.
+of time, handed to `play.py --command-script` and written into the command term
+after the term's own `compute`, which is where the operator writes its own. The
+pad is never opened for a scripted term: one that is plugged in and nudged would
+drive the clip instead. The scripts are the module-level functions below, named
+by `Clip.script`; `play` loads this file by path to find them.
 """
 
 from __future__ import annotations
 
 import argparse
-import math
 import os
 import subprocess
+import sys
 import tempfile
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import numpy as np
-
 REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "docs" / "media"
+PLAY = REPO / "scripts" / "play.py"
 
 #: What is drawn, and what the README shows. Drawn at twice the size and scaled
 #: down, which is the anti-aliasing: a 360-pixel render of a robot whose legs are
@@ -52,7 +55,8 @@ SHOW = (360, 270)
 #: at a speed the policy did not. It also divides both control rates there are:
 #: one step in 4 of a 50 Hz task, one in 16 of jumper.posture's and jumper.jump's
 #: 200 Hz. Taking "one in 4" for granted drew those two at 50 frames a second,
-#: four times the file for the same picture.
+#: four times the file for the same picture. The recorder samples at exactly this
+#: rate, so the GIF's frames are control steps and not interpolations.
 FPS = 12.5
 
 #: The still at the top of the README, drawn at twice this for the same reason.
@@ -63,6 +67,13 @@ SCENE = "studio"
 
 @dataclass(frozen=True)
 class Camera:
+    """`play.py --video`'s camera, placed from the robot's first frame.
+
+    The recorder puts the azimuth relative to the way the robot faces and, with
+    `follow`, tracks the body over the ground looking at its centre of mass; a
+    fixed camera (`follow=False`) stays where the first frame put it, looking at
+    `height`. See the docstring of `mjrl/viewer/video.py`.
+    """
     distance: float = 0.72
     #: Degrees, **from the way the robot faces in the clip's first frame** and not
     #: from the world's x: a reset turns the robot to a heading of its own, and a
@@ -70,21 +81,12 @@ class Camera:
     #: next. 0 looks along the robot from behind it, 180 straight at its front.
     azimuth: float = 140.0
     elevation: float = -16.0
-    #: Height of the point looked at, metres. The body rides at about 0.11.
+    #: Height of the point a fixed camera looks at, metres. The body rides at
+    #: about 0.11. A following camera looks at the body and ignores this.
     height: float = 0.06
     #: Follow the body over the ground. Off for a motion that stays where it is,
     #: where a camera that moved would add motion the policy did not make.
     follow: bool = True
-    #: Seconds the camera takes to catch up. The body sways with every step, and
-    #: a camera locked to it turns the sway into the whole picture shaking; one
-    #: that is slow loses a robot that leaps. A quarter of a second suits a walk.
-    lag: float = 0.25
-
-
-#: `(seconds since the clip began) -> command`, one per command term. A posture's
-#: height may be NaN, the term's own neutral height, or `(height, share)`, that
-#: share of the way there from it.
-Script = Callable[[float], tuple]
 
 
 @dataclass(frozen=True)
@@ -98,8 +100,10 @@ class Clip:
     #: closes on the pose it opened with.
     seconds: float | None
     camera: Camera = field(default_factory=Camera)
-    #: Command term -> its script. A term not named keeps what it samples.
-    commands: dict[str, Script] = field(default_factory=dict)
+    #: The name of a function in this file: `(seconds since the clip began) ->
+    #: {command term: values}`, handed to `play.py --command-script`. A term not
+    #: named keeps what it samples. None scripts nothing.
+    script: str | None = None
 
 
 def _ramp(t: float, t0: float, t1: float) -> float:
@@ -108,18 +112,20 @@ def _ramp(t: float, t0: float, t1: float) -> float:
     return x * x * (3.0 - 2.0 * x)
 
 
-def _walk(speed: float) -> Script:
-    return lambda t: (speed * _ramp(t, 0.3, 1.3), 0.0, 0.0)
+#: A posture's height that is NaN is the term's own neutral height; `(height,
+#: share)` is that share of the way there from it. `mjrl.replay.script_commands`
+#: reads both.
+_NEUTRAL = (0.0, 0.0, 0.0, float("nan"))
 
 
-def _stand(_t: float) -> tuple[float, ...]:
-    return (0.0, 0.0, 0.0)
+def walk(t: float) -> dict:
+    """jumper.posture walking forward at 0.5 m/s, holding its neutral posture."""
+    return {"twist": (0.5 * _ramp(t, 0.3, 1.3), 0.0, 0.0), "posture": _NEUTRAL}
 
 
-def _neutral(_t: float) -> tuple[float, ...]:
-    # (twist, pitch, roll, height); a height that is NaN is the term's own
-    # `neutral_height`.
-    return (0.0, 0.0, 0.0, float("nan"))
+def claw(t: float) -> dict:
+    """jumper.five_foot walking forward at 0.35 m/s."""
+    return {"twist": (0.35 * _ramp(t, 0.3, 1.3), 0.0, 0.0)}
 
 
 #: jumper.posture's standing band is 30, 20 and 15 degrees and 0.07 to 0.15 m
@@ -127,28 +133,27 @@ def _neutral(_t: float) -> tuple[float, ...]:
 _TWIST, _PITCH, _ROLL, _HIGH = 0.45, 0.30, 0.22, 0.14
 
 
-def _pose(t: float) -> tuple:
-    """Pitch, roll, twist, then height: one after another, each back to rest."""
+def pose(t: float) -> dict:
+    """jumper.posture standing: pitch, roll, twist, then height, each back to rest."""
     def bump(t0: float) -> float:
         return _ramp(t, t0, t0 + 0.4) - _ramp(t, t0 + 1.0, t0 + 1.4)
 
     lift = bump(4.4)
-    return (_TWIST * bump(3.0), _PITCH * bump(0.2), _ROLL * bump(1.6),
-            (_HIGH, lift))
+    return {
+        "twist": (0.0, 0.0, 0.0),
+        "posture": (_TWIST * bump(3.0), _PITCH * bump(0.2), _ROLL * bump(1.6), (_HIGH, lift)),
+    }
 
 
 CLIPS: dict[str, Clip] = {
-    "walk": Clip("jumper.posture", skip=1.0, seconds=4.0,
-                 commands={"twist": _walk(0.5), "posture": _neutral}),
+    "walk": Clip("jumper.posture", skip=1.0, seconds=4.0, script="walk"),
     "posture": Clip("jumper.posture", skip=1.0, seconds=6.0,
-                    camera=Camera(follow=False),
-                    commands={"twist": _stand, "posture": _pose}),
-    "claw": Clip("jumper.five_foot", skip=1.0, seconds=4.0,
-                 commands={"twist": _walk(0.35)}),
+                    camera=Camera(follow=False), script="pose"),
+    "claw": Clip("jumper.five_foot", skip=1.0, seconds=4.0, script="claw"),
     # Followed over the ground and not in height, so the jump is the robot
     # leaving the floor and not the floor leaving the picture.
     "jump": Clip("jumper.jump", skip=0.0, seconds=1.76,
-                 camera=Camera(distance=0.85, height=0.17, lag=0.06)),
+                 camera=Camera(distance=0.85, height=0.17)),
     "dance": Clip("jumper.dance_brazilian", skip=6.0, seconds=5.0,
                   camera=Camera(follow=False)),
     # From the side of the arm that waves; from the other, the body is in the way.
@@ -172,186 +177,90 @@ def _checkpoint(task: str) -> Path:
     return found[0]
 
 
-def _script(term, script: Script, step_dt: float, start: list[int], env) -> None:
-    """Have `term` hold what `script` says, from its own `compute` on."""
-    import torch
+def _rates(clip: Clip) -> tuple[float, float, int]:
+    """`(physics Hz, control Hz, control steps)` of `clip`, from the task's config.
 
-    compute = term.compute
-    columns = term.command.shape[1]
-
-    def scripted(dt, env_ids=None):
-        compute(dt, env_ids)
-        t = (env.common_step_counter - start[0]) * step_dt
-        values = list(script(t))
-        if hasattr(term, "posture_command"):
-            rest = term.cfg.neutral_height
-            height = values[3]
-            if isinstance(height, tuple):
-                values[3] = rest + (height[0] - rest) * height[1]
-            elif math.isnan(height):
-                values[3] = rest
-            term.posture_command[:] = torch.tensor(values, device=term.device)
-            term.hold_to_band()
-            return
-        if len(values) != columns:
-            raise SystemExit(f"error: a script of {len(values)} for a command of {columns}")
-        term.vel_command_b[:] = torch.tensor(values, device=term.device)
-        if hasattr(term, "vel_command_w"):
-            term.vel_command_w[:] = term.vel_command_b
-
-    term.compute = scripted
-
-
-def rollout(clip: Clip):
-    """Run `clip`'s policy. Returns `(qpos per control step, model, control rate)`."""
-    from dataclasses import asdict
-
-    import mujoco
-    import torch
-    from mjlab.envs import ManagerBasedRlEnv
-    from mjlab.rl import RslRlVecEnvWrapper
-    from mjlab.rl.runner import MjlabOnPolicyRunner
-    from mjrl.replay import skip_rewards
-
-    import scenes
+    Read from the config rather than from a built environment: the environment
+    is `play.py`'s to build. The whole recording, for a clip with no length of
+    its own, is one step short of the motion the task tracks -- on reaching the
+    end the command resamples, which puts the robot back at the first frame.
+    """
     import tasks
-    from tasks.jumper.dance.export_media import _qpos_of, _verify_qpos_roundtrip
 
     env_cfg = tasks.load_env_cfg(clip.task, play=True)
-    for name, term in env_cfg.commands.items():
-        if hasattr(term, "pad"):
-            term.pad = False
-            print(f"[media] {clip.task}: command {name!r} opens no pad")
-    scenes.apply(env_cfg, SCENE)
-    env_cfg.scene.num_envs = 1
-    agent_cfg = tasks.load_agent_cfg(clip.task)
     step_dt = env_cfg.sim.mujoco.timestep * env_cfg.decimation
+    if clip.seconds is None:
+        import numpy as np
 
-    env = ManagerBasedRlEnv(cfg=env_cfg, device="cpu")
-    try:
-        skip_rewards(env)
-        wrapped = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
-        runner_cls = tasks.load_runner_cls(clip.task) or MjlabOnPolicyRunner
-        runner = runner_cls(wrapped, asdict(agent_cfg), device="cpu")
-        runner.load(str(_checkpoint(clip.task)), load_cfg={"actor": True}, strict=True,
-                    map_location="cpu")
-        policy = runner.get_inference_policy(device="cpu")
-
-        start = [0]
-        for name, script in clip.commands.items():
-            _script(env.command_manager.get_term(name), script, step_dt, start, env)
-
-        robot = env.scene["robot"]
-        obs, _ = wrapped.reset()
-        start[0] = env.common_step_counter
-        _verify_qpos_roundtrip(env, robot, mujoco)
-        model = env.sim.mj_model
-        if model.nq != 7 + robot.data.joint_pos.shape[1]:
-            raise SystemExit(
-                f"error: the model has {model.nq} coordinates and the robot accounts for "
-                f"{7 + robot.data.joint_pos.shape[1]}; a scene with a prop of its own "
-                f"needs its coordinates recorded too"
-            )
-
-        if clip.seconds is None:
-            # One short of the total: on reaching it the command resamples, which
-            # puts the robot back at the recording's first frame.
-            motion = env.command_manager.get_term("motion").motion
-            steps = int(motion.time_step_total) - 1
-        else:
-            steps = round((clip.skip + clip.seconds) / step_dt)
-        qpos = np.zeros((steps, model.nq))
-        with torch.inference_mode():
-            for t in range(steps):
-                qpos[t] = _qpos_of(env, robot)
-                obs, _, dones, _ = wrapped.step(policy(obs))
-                if bool(dones[0]):
-                    # Said rather than hidden: the frames after it are a second
-                    # attempt, which is what a replay of a one-shot motion does.
-                    print(f"[media] {clip.task}: the episode ended at {t * step_dt:.2f} s")
-        return qpos[round(clip.skip / step_dt):], model, 1.0 / step_dt
-    finally:
-        env.close()
+        motion = np.load(env_cfg.commands["motion"].motion_file)
+        steps = int(motion["joint_pos"].shape[0]) - 1
+    else:
+        steps = round((clip.skip + clip.seconds) / step_dt)
+    return 1.0 / env_cfg.sim.mujoco.timestep, 1.0 / step_dt, steps
 
 
-def _option(model):
-    """Appearance only: the collision hulls drawn over the meshes hide the robot."""
-    import mujoco
-    from mjrl.viewer.live import LiveViewer
-
-    option = mujoco.MjvOption()
-    for group in LiveViewer._collision_only_groups(model):
-        option.geomgroup[group] = 0
-    return option
-
-
-def _frames(model, qpos: np.ndarray, camera: Camera, size: tuple[int, int]):
-    """Yield one drawn frame per row of `qpos`."""
-    import mujoco
-
-    os.environ.setdefault("MUJOCO_GL", "egl")
-    # The off-screen buffer is the model's, and the still is wider than its default.
-    model.vis.global_.offwidth = max(model.vis.global_.offwidth, size[0])
-    model.vis.global_.offheight = max(model.vis.global_.offheight, size[1])
-
-    data = mujoco.MjData(model)
-    cam = mujoco.MjvCamera()
-    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-    cam.distance, cam.elevation = camera.distance, camera.elevation
-    w, x, y, z = qpos[0, 3:7]
-    heading = np.degrees(np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
-    cam.azimuth = heading + camera.azimuth
-    option = _option(model)
-    gain = 1.0 - np.exp(-(1.0 / FPS) / camera.lag)
-    lookat = np.array([*qpos[0, :2], camera.height])
-    renderer = mujoco.Renderer(model, height=size[1], width=size[0])
-    try:
-        for row in qpos:
-            data.qpos[:] = row
-            mujoco.mj_forward(model, data)
-            if camera.follow:
-                lookat[:2] += gain * (row[:2] - lookat[:2])
-            cam.lookat[:] = lookat
-            renderer.update_scene(data, camera=cam, scene_option=option)
-            yield renderer.render()
-    finally:
-        renderer.close()
+def _record(clip: Clip, camera: Camera, size: tuple[int, int], fps: float, steps: int,
+            physics_hz: float, path: Path) -> None:
+    """One run of `play.py --video`, the clip's camera and script on the line."""
+    command = [
+        sys.executable, str(PLAY), "--task", clip.task,
+        "--checkpoint", str(_checkpoint(clip.task)),
+        "--backend", "native", "--device", "cpu", "--num_envs", "1",
+        "--headless", "--no-obs-noise", "--scene", SCENE,
+        "--physics-hz", f"{physics_hz:g}", "--steps", str(steps),
+        "--video", str(path), "--video-fps", f"{fps:g}",
+        "--video-width", str(size[0]), "--video-height", str(size[1]),
+        "--video-distance", f"{camera.distance:g}",
+        "--video-azimuth", f"{camera.azimuth:g}",
+        "--video-elevation", f"{camera.elevation:g}",
+    ]
+    if not camera.follow:
+        command += ["--no-video-follow", "--video-lookat-height", f"{camera.height:g}"]
+    if clip.script is not None:
+        command += ["--command-script", f"{Path(__file__).resolve()}:{clip.script}"]
+    environment = os.environ.copy()
+    if sys.platform.startswith("linux"):
+        # No window: the GL backend binds when MuJoCo is imported, in the child.
+        environment.setdefault("MUJOCO_GL", "egl")
+    subprocess.run(command, check=True, cwd=REPO, env=environment)
 
 
-def _gif(frames, fps: float, path: Path) -> None:
+def _ffmpeg() -> str:
     import imageio_ffmpeg
 
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    with tempfile.TemporaryDirectory() as tmp:
-        raw = Path(tmp) / "raw.mp4"
-        writer = imageio_ffmpeg.write_frames(
-            str(raw), size=DRAW, fps=fps, macro_block_size=1, codec="libx264",
-            pix_fmt_out="yuv444p", output_params=["-crf", "4"],
-        )
-        writer.send(None)
-        for frame in frames:
-            writer.send(np.ascontiguousarray(frame).tobytes())
-        writer.close()
-        # One palette for the whole clip, from the clip: a GIF has 256 colours,
-        # and the generic ones spend most of them on hues a grey studio lacks.
-        # `fps` first: without it the muxer fills the clip out to 50 frames a
-        # second with copies, which plays the same and is four times the frames.
-        graph = (
-            f"fps={fps:g},scale={SHOW[0]}:{SHOW[1]}:flags=lanczos,split[a][b];"
-            "[a]palettegen=stats_mode=diff[p];"
-            "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
-        )
-        subprocess.run(
-            [ffmpeg, "-y", "-loglevel", "error", "-i", str(raw), "-filter_complex", graph,
-             "-loop", "0", str(path)],
-            check=True,
-        )
+    return imageio_ffmpeg.get_ffmpeg_exe()
 
 
-def _png(frame: np.ndarray, path: Path) -> None:
+def _gif(mp4: Path, skip: float, seconds: float | None, path: Path) -> None:
+    # One palette for the whole clip, from the clip: a GIF has 256 colours, and
+    # the generic ones spend most of them on hues a grey studio lacks. `fps`
+    # first: without it the muxer fills the clip out to 50 frames a second with
+    # copies, which plays the same and is four times the frames.
+    graph = (
+        f"fps={FPS:g},scale={SHOW[0]}:{SHOW[1]}:flags=lanczos,split[a][b];"
+        "[a]palettegen=stats_mode=diff[p];"
+        "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
+    )
+    cut = ["-ss", f"{skip:g}"] + ([] if seconds is None else ["-t", f"{seconds:g}"])
+    subprocess.run(
+        [_ffmpeg(), "-y", "-loglevel", "error", *cut, "-i", str(mp4),
+         "-filter_complex", graph, "-loop", "0", str(path)],
+        check=True,
+    )
+
+
+def _png(mp4: Path, frame: int, path: Path) -> None:
+    """Frame `frame` of `mp4`, scaled to `STILL`."""
     from PIL import Image
 
-    Image.fromarray(frame).resize(STILL, Image.Resampling.LANCZOS).save(path, optimize=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = Path(tmp) / "frame.png"
+        subprocess.run(
+            [_ffmpeg(), "-y", "-loglevel", "error", "-i", str(mp4),
+             "-vf", f"select=eq(n\\,{frame})", "-frames:v", "1", str(raw)],
+            check=True,
+        )
+        Image.open(raw).resize(STILL, Image.Resampling.LANCZOS).save(path, optimize=True)
 
 
 def main() -> int:
@@ -367,33 +276,36 @@ def main() -> int:
             print(f"{name:<8}  {clip.task:<24} {length}")
         return 0
 
-    import torch
-    from mjrl.backend import resolve
-    from mjrl.backend.select import use_backend
-
-    # One environment: the step is serial, and torch spread over every core
-    # spends longer handing the work out than doing it.
-    torch.set_num_threads(1)
-    # Before the first environment is built, which reads the backend once.
-    use_backend(resolve(backend="native", device="cpu", num_envs=1, training=False))
-
     OUT.mkdir(parents=True, exist_ok=True)
-    for name in args.only or list(CLIPS):
-        clip = CLIPS[name]
-        qpos, model, rate = rollout(clip)
-        path = OUT / f"{name}.gif"
-        every = rate / FPS
-        if abs(every - round(every)) > 1e-6:
-            raise SystemExit(f"error: {clip.task} steps at {rate:g} Hz, which {FPS:g} "
-                             f"frames a second does not divide")
-        _gif(_frames(model, qpos[::round(every)], clip.camera, DRAW), FPS, path)
-        print(f"[media] {path.relative_to(REPO)}  {path.stat().st_size / 1e6:.2f} MB")
-        if name == STILL_FROM:
-            row = qpos[round(STILL_AT * rate)][None]
-            still = OUT / "jumper.png"
-            twice = (2 * STILL[0], 2 * STILL[1])
-            _png(next(iter(_frames(model, row, STILL_CAMERA, twice))), still)
-            print(f"[media] {still.relative_to(REPO)}  {still.stat().st_size / 1e6:.2f} MB")
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in args.only or list(CLIPS):
+            clip = CLIPS[name]
+            physics_hz, control_hz, steps = _rates(clip)
+            every = control_hz / FPS
+            if abs(every - round(every)) > 1e-6:
+                raise SystemExit(f"error: {clip.task} steps at {control_hz:g} Hz, which "
+                                 f"{FPS:g} frames a second does not divide")
+            mp4 = Path(tmp) / f"{name}.mp4"
+            _record(clip, clip.camera, DRAW, FPS, steps, physics_hz, mp4)
+            path = OUT / f"{name}.gif"
+            _gif(mp4, clip.skip, clip.seconds, path)
+            print(f"[media] {path.relative_to(REPO)}  {path.stat().st_size / 1e6:.2f} MB")
+            if name == STILL_FROM:
+                # Its own recording, at the still's size and camera, up to the
+                # frame wanted: the recorder writes the first frame and one at
+                # every 1/FPS after it, so the last frame is the one at `at`.
+                at = clip.skip + STILL_AT
+                frame = round(at * FPS)
+                if abs(at * FPS - frame) > 1e-6:
+                    raise SystemExit(f"error: the still at {at:g} s is not on a frame at "
+                                     f"{FPS:g} a second")
+                still_mp4 = Path(tmp) / "still.mp4"
+                twice = (2 * STILL[0], 2 * STILL[1])
+                _record(clip, STILL_CAMERA, twice, FPS, round(at * control_hz), physics_hz,
+                        still_mp4)
+                still = OUT / "jumper.png"
+                _png(still_mp4, frame, still)
+                print(f"[media] {still.relative_to(REPO)}  {still.stat().st_size / 1e6:.2f} MB")
     return 0
 
 
